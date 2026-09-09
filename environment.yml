@@ -1,0 +1,17 @@
+name: paper4-kbvqa
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - pandas
+  - scikit-learn
+  - pyyaml
+  - requests
+  - pillow
+  - pytest
+  - pip:
+      - transformers>=4.50
+      - accelerate>=1.0
+      - sentence-transformers>=3.0
+      - faiss-cpu>=1.8

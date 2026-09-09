@@ -1,0 +1,36 @@
+seed: 42
+dev_mode: true
+model:
+  name: Qwen/Qwen2.5-VL-3B-Instruct
+  revision: main
+  precision: auto
+  quantization: auto_if_supported
+  max_new_tokens: 24
+retrieval:
+  providers: [wikipedia, wikidata, conceptnet]
+  top_k_initial: 20
+  top_k_final: 5
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+filtering:
+  min_evidence_score: 0.15  # rule-based dev default; tune only on validation
+  weights:
+    semantic: 0.30
+    question: 0.20
+    entity: 0.18
+    visual: 0.14
+    source: 0.12
+    redundancy: 0.06
+verification:
+  weights:
+    semantic: 0.34
+    entity: 0.18
+    visual: 0.14
+    retrieval: 0.18
+    provenance: 0.12
+    contradiction: 0.04
+calibration:
+  method: platt
+selective:
+  threshold: null
+  target_risk: 0.05
+checkpoint_every: 25

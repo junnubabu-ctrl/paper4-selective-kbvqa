@@ -1,0 +1,30 @@
+{
+  "status": "SYNTHETIC_SMOKE_ONLY",
+  "retrieved": [
+    "e1",
+    "e3",
+    "e2"
+  ],
+  "selected": [
+    "e1"
+  ],
+  "verification": {
+    "verification_score": 0.5955112515871158,
+    "semantic": 0.33517574332792605,
+    "entity": 1.0,
+    "visual": 0.8,
+    "retrieval": 0.8308416603090052,
+    "provenance": 0.3333333333333333,
+    "contradiction": 0.0
+  },
+  "calibration": {
+    "ece": 0.4510300365996126,
+    "brier": 0.20413310676368507
+  },
+  "selective": {
+    "threshold": 0.48969324393806923,
+    "coverage": 0.625,
+    "risk": 0.2
+  },
+  "aurc": 0.15148809523809526
+}

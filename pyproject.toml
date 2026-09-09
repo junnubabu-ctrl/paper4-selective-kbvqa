@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paper4-selective-kbvqa"
+version = "0.1.0"
+description = "Evidence-provenance verification, calibration, and selective answering for KB-VQA"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.0",
+  "scikit-learn>=1.4",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+vlm = [
+  "torch>=2.2",
+  "transformers>=4.50",
+  "accelerate>=1.0",
+  "pillow>=10.0",
+  "bitsandbytes>=0.43; platform_system == 'Linux'",
+]
+retrieval = [
+  "sentence-transformers>=3.0",
+  "faiss-cpu>=1.8",
+  "requests>=2.31",
+]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

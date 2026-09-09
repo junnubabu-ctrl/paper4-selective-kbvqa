@@ -1,0 +1,13 @@
+{
+  "python_version": "3.13.5",
+  "platform": "Linux-6.18.35-x86_64-with-glibc2.41",
+  "cpu_count": 5,
+  "ram_bytes": 6236925952,
+  "storage_total_bytes": 33770192896,
+  "storage_free_bytes": 32029921280,
+  "torch_version": "2.10.0+cpu",
+  "cuda_available": false,
+  "cuda_version": null,
+  "gpu_count": 0,
+  "gpus": []
+}

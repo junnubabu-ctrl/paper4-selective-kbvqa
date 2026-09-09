@@ -1,0 +1,13 @@
+numpy>=1.26
+pandas>=2.0
+scikit-learn>=1.4
+PyYAML>=6.0
+requests>=2.31
+pillow>=10.0
+# GPU/VLM extras for Kaggle/Colab:
+# torch>=2.2
+# transformers>=4.50
+# accelerate>=1.0
+# bitsandbytes>=0.43 ; platform_system == "Linux"
+# sentence-transformers>=3.0
+# faiss-cpu>=1.8

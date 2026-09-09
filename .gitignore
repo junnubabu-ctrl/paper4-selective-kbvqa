@@ -1,0 +1,27 @@
+__pycache__/
+.pytest_cache/
+.venv/
+.env
+*.pyc
+*.pyo
+*.egg-info/
+.DS_Store
+
+# Root-level data / weights / secrets
+/data/
+/datasets/
+/models/
+/checkpoints/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.key
+secrets*
+.env*
+
+# Generated caches too large for Git
+/cache/
+results/predictions/*.jsonl
+results/retrieval_cache/

@@ -1,0 +1,4 @@
+base: base.yaml
+dataset:
+  name: aokvqa
+  split_protocol: official

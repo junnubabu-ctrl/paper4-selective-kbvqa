@@ -1,0 +1,1 @@
+run_id,timestamp,git_commit,dataset,split,sample_count,model,model_revision,precision,quantization,retrieval_method,knowledge_sources,top_k,filtering_method,verifier,calibration,threshold,seed,accuracy,coverage,selective_accuracy,selective_risk,ECE,Brier,AURC,latency,peak_vram,status,error_message

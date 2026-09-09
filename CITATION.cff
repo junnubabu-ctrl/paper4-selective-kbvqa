@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this research code, please cite the associated Paper 4 manuscript once published."
+title: "Paper 4: Evidence Verification and Selective Answering for Knowledge-Based Visual Question Answering"
+type: software
+authors:
+  - family-names: "Babu"
+    given-names: "N. Junnu"
+version: 0.1.0
+date-released: 2026-09-09
+license: Apache-2.0
+repository-code: "https://github.com/junnubabu-ctrl/paper4-selective-kbvqa"
