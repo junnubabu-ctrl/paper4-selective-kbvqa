@@ -1,0 +1,53 @@
+experiment:
+  name: evitrust_llm_execution
+  seeds: [42, 123, 2026]
+
+generator:
+  model_id: Qwen/Qwen2.5-VL-3B-Instruct
+  deterministic: true
+  temperature: 0.0
+  max_new_tokens: 64
+  load_in_4bit: true
+  quantization: nf4
+
+critic:
+  model_id: Qwen/Qwen2.5-1.5B-Instruct
+  prompt_version: evitrust-critic-v1
+  mode: label_sequence_likelihood
+  labels: [SUPPORTED, CONTRADICTED, INSUFFICIENT]
+  load_in_4bit: true
+  quantization: nf4
+
+retrieval:
+  sources: [wikipedia, wikidata, conceptnet]
+  top_k: 10
+  filtered_top_k: 5
+  cache: true
+
+calibration:
+  fit_split: validation
+  methods: [platt, isotonic, temperature]
+  report: [ece, brier, nll]
+
+selective:
+  target_risks: [0.01, 0.05, 0.10]
+  primary_target_risk: 0.05
+  report: [coverage, selective_accuracy, selective_risk, aurc]
+
+robustness:
+  corruption_types:
+    - irrelevant_injection
+    - synthetic_contradiction
+    - source_dropout
+    - evidence_scarcity
+    - ranking_corruption
+  severities: [0.10, 0.25, 0.50]
+
+integrity:
+  ground_truth_in_inference: false
+  final_test_threshold_tuning: false
+  checkpoint_resume: true
+  save_prompt_version: true
+  save_model_revision: true
+  save_evidence_ids: true
+  save_record_sha256: true
