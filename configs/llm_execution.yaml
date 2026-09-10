@@ -18,11 +18,29 @@ critic:
   load_in_4bit: true
   quantization: nf4
 
+cross_family_verifier_ablation:
+  enabled: true
+  model_id: MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli
+  task: text_entailment
+  role: verifier_ablation_only
+
 retrieval:
   sources: [wikipedia, wikidata, conceptnet]
   top_k: 10
   filtered_top_k: 5
   cache: true
+
+reliability:
+  generator_weight: 0.35
+  critic_support_weight: 0.40
+  provenance_weight: 0.25
+  contradiction_penalty: 0.35
+  insufficiency_penalty: 0.15
+  provenance_components:
+    citation_validity: 0.60
+    source_traceability: 0.30
+    source_diversity: 0.10
+  visual_consistency_in_primary_fusion: false
 
 calibration:
   fit_split: validation
