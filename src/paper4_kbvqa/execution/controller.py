@@ -60,10 +60,25 @@ class ExecutionConfig:
                 raise ValueError(f"{name} must be finite and non-negative")
 
 
-def leakage_safe_query(question: str, visual_entities: Sequence[str]) -> str:
-    parts = [str(question).strip()]
-    if visual_entities:
-        parts.append(" ".join(str(x).strip() for x in visual_entities if str(x).strip()))
+def leakage_safe_query(
+    question_or_sample: str | VQASample,
+    visual_entities: Sequence[str] | None = None,
+) -> str:
+    """Build an inference-only retrieval query.
+
+    Backward-compatible forms:
+      leakage_safe_query(sample)
+      leakage_safe_query(question, visual_entities)
+    """
+    if isinstance(question_or_sample, VQASample):
+        question = question_or_sample.question
+        entities = question_or_sample.visual_entities
+    else:
+        question = str(question_or_sample)
+        entities = visual_entities or ()
+    parts = [question.strip()]
+    if entities:
+        parts.append(" ".join(str(x).strip() for x in entities if str(x).strip()))
     return " ".join(p for p in parts if p).strip()
 
 
@@ -138,7 +153,8 @@ class EviTrustExecutionController:
     def __init__(
         self,
         *,
-        provider,
+        provider=None,
+        retriever=None,
         evidence_filter,
         generator,
         critic: EvidenceCritic,
@@ -146,7 +162,11 @@ class EviTrustExecutionController:
         threshold: float | None = None,
         config: ExecutionConfig | None = None,
     ):
-        self.provider = provider
+        if provider is None and retriever is None:
+            raise ValueError("provider or retriever is required")
+        if provider is not None and retriever is not None and provider is not retriever:
+            raise ValueError("pass only one of provider or retriever")
+        self.provider = provider if provider is not None else retriever
         self.evidence_filter = evidence_filter
         self.generator = generator
         self.critic = critic
@@ -285,7 +305,6 @@ class EviTrustExecutionController:
             "provenance_score": prov,
             "visual_consistency": visual_consistency,
             "raw_reliability": raw_reliability,
-            # Compatibility with existing calibration/evaluation scripts.
             "raw_confidence": raw_reliability,
             "calibrated_confidence": calibrated,
             "threshold": self.threshold,
