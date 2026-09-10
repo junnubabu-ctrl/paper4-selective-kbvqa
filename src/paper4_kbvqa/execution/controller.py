@@ -33,12 +33,12 @@ class ExecutionConfig:
     retrieval_top_k: int = 10
     filtered_top_k: int = 5
     target_risk: float = 0.05
-    generator_weight: float = 0.30
-    critic_support_weight: float = 0.35
-    provenance_weight: float = 0.20
-    visual_weight: float = 0.15
+    generator_weight: float = 0.35
+    critic_support_weight: float = 0.40
+    provenance_weight: float = 0.25
     contradiction_penalty: float = 0.35
-    prompt_version: str = "evitrust-runtime-v2"
+    insufficiency_penalty: float = 0.15
+    prompt_version: str = "evitrust-runtime-v3"
     auto_extract_entities: bool = True
 
     def validate(self) -> None:
@@ -52,8 +52,8 @@ class ExecutionConfig:
             "generator_weight",
             "critic_support_weight",
             "provenance_weight",
-            "visual_weight",
             "contradiction_penalty",
+            "insufficiency_penalty",
         ):
             value = float(getattr(self, name))
             if not math.isfinite(value) or value < 0:
@@ -64,12 +64,6 @@ def leakage_safe_query(
     question_or_sample: str | VQASample,
     visual_entities: Sequence[str] | None = None,
 ) -> str:
-    """Build an inference-only retrieval query.
-
-    Backward-compatible forms:
-      leakage_safe_query(sample)
-      leakage_safe_query(question, visual_entities)
-    """
     if isinstance(question_or_sample, VQASample):
         question = question_or_sample.question
         entities = question_or_sample.visual_entities
@@ -83,6 +77,7 @@ def leakage_safe_query(
 
 
 def provenance_score(evidence: Sequence[Evidence], cited_ids: Sequence[str]) -> float:
+    """Backward-compatible citation-validity score."""
     if not cited_ids:
         return 0.0
     available = {str(ev.evidence_id) for ev in evidence}
@@ -90,30 +85,90 @@ def provenance_score(evidence: Sequence[Evidence], cited_ids: Sequence[str]) -> 
     return valid / max(1, len(cited_ids))
 
 
+def provenance_components(
+    evidence: Sequence[Evidence],
+    cited_ids: Sequence[str],
+) -> dict[str, float]:
+    """Audit citation validity, URI/source traceability, and source diversity."""
+    by_id = {str(ev.evidence_id): ev for ev in evidence}
+    cited = [str(x) for x in cited_ids]
+    valid_items = [by_id[x] for x in cited if x in by_id]
+    validity = provenance_score(evidence, cited)
+
+    if valid_items:
+        traceable = sum(
+            1 for ev in valid_items
+            if str(getattr(ev, "source", "") or "").strip()
+            and str(getattr(ev, "uri", "") or "").strip()
+        ) / len(valid_items)
+    else:
+        traceable = 0.0
+
+    available_sources = {
+        str(getattr(ev, "source", "") or "").strip()
+        for ev in evidence
+        if str(getattr(ev, "source", "") or "").strip()
+    }
+    cited_sources = {
+        str(getattr(ev, "source", "") or "").strip()
+        for ev in valid_items
+        if str(getattr(ev, "source", "") or "").strip()
+    }
+    diversity = (
+        len(cited_sources) / len(available_sources)
+        if available_sources else 0.0
+    )
+
+    composite = 0.60 * validity + 0.30 * traceable + 0.10 * diversity
+    return {
+        "citation_validity": float(validity),
+        "source_traceability": float(traceable),
+        "source_diversity": float(diversity),
+        "composite": float(max(0.0, min(1.0, composite))),
+    }
+
+
 def reliability_fusion(
     *,
     generation_confidence: float,
     support_probability: float,
     contradiction_probability: float,
+    insufficiency_probability: float,
     provenance: float,
-    visual_consistency: float,
     config: ExecutionConfig,
+    visual_consistency: float | None = None,
 ) -> float:
+    """Primary reliability score.
+
+    visual_consistency is retained only for backward-compatible calls and is
+    deliberately excluded from the primary fusion until an independently
+    validated visual-consistency estimator is available.
+    """
     values = [
         generation_confidence,
         support_probability,
         contradiction_probability,
+        insufficiency_probability,
         provenance,
-        visual_consistency,
     ]
-    clean = [0.0 if not math.isfinite(float(x)) else max(0.0, min(1.0, float(x))) for x in values]
-    generation_confidence, support_probability, contradiction_probability, provenance, visual_consistency = clean
+    clean = [
+        0.0 if not math.isfinite(float(x))
+        else max(0.0, min(1.0, float(x)))
+        for x in values
+    ]
+    (
+        generation_confidence,
+        support_probability,
+        contradiction_probability,
+        insufficiency_probability,
+        provenance,
+    ) = clean
     raw = (
         config.generator_weight * generation_confidence
         + config.critic_support_weight * support_probability
         + config.provenance_weight * provenance
-        + config.visual_weight * visual_consistency
         - config.contradiction_penalty * contradiction_probability
+        - config.insufficiency_penalty * insufficiency_probability
     )
     return max(0.0, min(1.0, raw))
 
@@ -143,12 +198,7 @@ def _field(obj, *names, default=None):
 
 
 class EviTrustExecutionController:
-    """Production-compatible LLM execution controller.
-
-    Reference answers remain in VQASample only for downstream evaluation and are
-    never passed to visual grounding, retrieval, generation, evidence filtering,
-    the LLM critic, calibration, or selective decision code.
-    """
+    """Production-compatible, leakage-safe EviTrust execution controller."""
 
     def __init__(
         self,
@@ -208,7 +258,6 @@ class EviTrustExecutionController:
 
     def run_one(self, sample: VQASample) -> dict:
         t0 = time.perf_counter()
-
         visual_entities = list(sample.visual_entities)
         if (
             self.config.auto_extract_entities
@@ -222,9 +271,7 @@ class EviTrustExecutionController:
         query = leakage_safe_query(sample.question, visual_entities)
         retrieved = self._retrieve(query)
         filtered, filter_scores = self._filter(
-            retrieved,
-            sample.question,
-            visual_entities,
+            retrieved, sample.question, visual_entities
         )
 
         generated = self.generator.generate(
@@ -239,14 +286,10 @@ class EviTrustExecutionController:
                 "supporting_evidence_ids",
                 "evidence_ids",
                 default=[],
-            )
-            or []
+            ) or []
         )
         generation_confidence = float(
             _field(generated, "raw_confidence", "confidence", default=0.0)
-        )
-        visual_consistency = float(
-            _field(generated, "visual_consistency", default=0.0)
         )
 
         verified = self.critic.verify(
@@ -259,14 +302,14 @@ class EviTrustExecutionController:
         support = float(_field(verified, "supported", default=0.0))
         contradiction = float(_field(verified, "contradicted", default=0.0))
         insufficiency = float(_field(verified, "insufficient", default=1.0))
-        prov = provenance_score(filtered, cited)
 
+        prov = provenance_components(filtered, cited)
         raw_reliability = reliability_fusion(
             generation_confidence=generation_confidence,
             support_probability=support,
             contradiction_probability=contradiction,
-            provenance=prov,
-            visual_consistency=visual_consistency,
+            insufficiency_probability=insufficiency,
+            provenance=prov["composite"],
             config=self.config,
         )
 
@@ -302,8 +345,8 @@ class EviTrustExecutionController:
                 "model_id": str(_field(verified, "model_id", default="")),
                 "prompt_version": str(_field(verified, "prompt_version", default="")),
             },
-            "provenance_score": prov,
-            "visual_consistency": visual_consistency,
+            "provenance": prov,
+            "provenance_score": prov["composite"],
             "raw_reliability": raw_reliability,
             "raw_confidence": raw_reliability,
             "calibrated_confidence": calibrated,
@@ -325,7 +368,6 @@ class EviTrustExecutionController:
         output_jsonl = Path(output_jsonl)
         checkpoint_json = Path(checkpoint_json)
         output_jsonl.parent.mkdir(parents=True, exist_ok=True)
-
         completed: set[str] = set()
         if checkpoint_json.exists():
             state = json.loads(checkpoint_json.read_text(encoding="utf-8"))
