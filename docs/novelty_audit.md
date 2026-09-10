@@ -1,33 +1,51 @@
-# NOVELTY AUDIT — 2026-09-09
+# NOVELTY AUDIT — updated 2026-09-10
 
 ## Result
 The original high-level idea **"verification + selective answering" is not sufficient novelty by itself**.
 
-### Closest method families found
-1. **Dancette et al., CVPR 2023 — Improving Selective Visual Question Answering by Learning From Your Peers.** Establishes selective prediction/abstention as a VQA research problem and evaluates risk/coverage.
-2. **Khan et al., CVPR 2024 — Consistency and Uncertainty: Identifying Unreliable Responses From Black-Box Vision-Language Models for Selective VQA.** Directly studies unreliable VLM responses and selection scores.
-3. **Srinivasan et al., Findings ACL 2024 — ReCoVERR.** Especially close: on A-OKVQA and VQAv2, low-confidence predictions are checked using additional visual evidence to reduce unnecessary abstention; calibration is also studied.
+## Closest method families verified
+1. **Dancette et al., CVPR 2023 — Improving Selective Visual Question Answering by Learning From Your Peers.** Establishes selective prediction/abstention as a VQA research problem and explicitly evaluates risk/coverage, including coverage at 1% risk.
+2. **Khan and Fu, CVPR 2024 — Consistency and Uncertainty: Identifying Unreliable Responses From Black-Box Vision-Language Models for Selective Visual Question Answering.** Directly studies unreliable VLM responses using neighborhood consistency for black-box selective prediction.
+3. **Srinivasan et al., Findings ACL 2024 — ReCoVERR.** Particularly close to the reliability objective: low-confidence answers are checked using additional evidence to reduce unnecessary abstention; calibration is part of the reliability protocol.
 4. **Adjali et al., EMNLP 2024 — Multi-Level Information Retrieval Augmented Generation for KB-VQA.** Couples entity/passage retrieval and answer generation.
-5. **Long et al., AAAI 2025 — ReAuSE.** Integrates retrieval and generation and includes retrieval calibration from relevance feedback on OK-VQA/A-OKVQA.
-6. **Hong et al., 2025 — Wiki-PRF.** Processing/retrieval/filtering pipeline targeting irrelevant retrieved knowledge.
-7. **Compagnoni et al., CVPR 2026 — ReAG.** KB-VQA RAG with a critic model that filters irrelevant passages and strengthens reasoning over evidence.
-8. **Ma et al., Findings ACL 2026 — Ground Then Rank.** Training-free entity identification followed by evidence re-ranking; emphasizes entity- and fact-level grounding.
-9. **Deng et al., Knowledge-Based Systems 2026 — collaborative parametric knowledge calibration for retrieval-augmented VQA.** Shows calibration terminology is already active within KB-VQA retrieval/generation.
-10. **Wang et al., JVCIR 2026 — CKCR.** Context-aware knowledge construction/retrieval addresses missing knowledge, semantic gaps, and heterogeneous-source fusion.
+5. **Long et al., AAAI 2025 — ReAuSE.** Integrates retrieval into a generative multimodal model and includes retrieval calibration from relevance feedback; evaluated on OK-VQA and A-OKVQA.
+6. **Compagnoni et al., CVPR 2026 — ReAG.** Combines coarse/fine retrieval with a critic that filters irrelevant passages before answer generation; demonstrates that retrieval filtering and evidence-grounded reasoning are already strong contemporary KB-VQA directions.
+7. **Recent 2025–2026 retrieval/filtering work** further reduces novelty space for generic claims around evidence ranking, knowledge filtering, or calibration.
 
 ## Defensible Paper-4 delta to test
-Do not claim novelty for retrieval, filtering, verification, calibration, or abstention individually. Test the **joint reliability formulation**:
+Do **not** claim novelty for retrieval, filtering, verification, calibration, selective prediction, or abstention individually.
 
-> source-traceable multi-source external evidence → relevance filtering → answer/evidence provenance verification with explicit contradiction signal → confidence fusion → held-out calibration → target-risk selective answering.
+The paper should test one integrated reliability hypothesis:
 
-The strongest novelty claim, if experiments support it, should be about **risk-controlled factual reliability of externally grounded KB-VQA under noisy/contradictory evidence**, not about simply adding a verifier or abstention threshold.
+> **source-traceable multi-source external evidence → relevance filtering → answer/evidence provenance verification with an explicit contradiction signal → confidence fusion → validation-only calibration → target-risk selective answering, evaluated under controlled external-evidence corruption.**
 
-## Required novelty stress tests
-- Compare against a strong selective-VQA baseline, not only ordinary KB-VQA baselines.
-- Include ReCoVERR-style evidence rescue/selection conceptually or experimentally where feasible.
-- Demonstrate benefit specifically under evidence noise/contradiction perturbations.
-- Report source attribution/provenance correctness or evidence-support quality, not only answer accuracy.
-- Show calibration and risk-coverage improvements survive across at least two KB-VQA datasets if compute permits.
+The strongest defensible contribution, if supported by experiments, is therefore **risk-controlled factual reliability of externally grounded KB-VQA under noisy, missing, mis-ranked, and contradictory evidence**, with an auditable provenance trail.
+
+## P0 novelty stress tests
+1. **Selective baseline** — compare against a strong selective-VQA method or protocol-matched learned selection baseline; ordinary KB-VQA baselines alone are insufficient.
+2. **Evidence-rescue baseline** — include a ReCoVERR-style verification/rescue comparison where feasible.
+3. **Strong retrieval baseline** — include or discuss a strong recent RAG/KB-VQA retrieval method such as ReAuSE under compatible datasets/protocols.
+4. **Controlled evidence corruption** — evaluate irrelevant injection, source dropout, contradiction injection, ranking corruption, and evidence scarcity.
+5. **Provenance/support evaluation** — report cited-evidence coverage, source-level failures, verifier separation, and contradiction detection where labels are available.
+6. **Two-dataset check** — show calibration/risk-coverage behavior on both A-OKVQA and OK-VQA if compute permits.
+7. **No cross-paper superiority claim without protocol matching** — published numbers from different models, knowledge corpora, splits, or evaluation code are contextual comparisons only.
+
+## Novelty decision rule
+Paper-4 should proceed to a strong journal claim only if at least the following are demonstrated from real experiments:
+- B3 improves unsupported-answer detection or verifier discrimination over B2;
+- B4 measurably improves calibration over raw/verifier-fused confidence;
+- B5 achieves a better risk-coverage trade-off at one or more predeclared target-risk levels;
+- the advantage does not disappear under at least two evidence-corruption types;
+- provenance/contradiction-aware verification contributes beyond semantic-only verification in ablation.
+
+If these conditions fail, the method or paper framing must be revised before manuscript submission rather than inflating novelty language.
+
+## Scientific positioning
+ReAG demonstrates that critic-based filtering of noisy retrieved passages is already current KB-VQA methodology. ReAuSE demonstrates that retrieval calibration is also already active. Selective VQA and black-box reliability were established before this project. Consequently, Paper-4 must be positioned as an **integrated, risk-controlled, provenance-audited reliability framework**, not as the first verifier, first calibration method, first abstention method, or first retrieval filter for VQA.
 
 ## Status
-Literature audit: VERIFIED at title/abstract/official-page level for the above sources. Full-paper extraction and exhaustive systematic review: PARTIAL.
+- Selective-VQA prior-art verification: **VERIFIED** against official CVPR pages.
+- ReAuSE verification: **VERIFIED** against the AAAI proceedings page.
+- ReAG verification: **VERIFIED** against the official CVPR 2026 page.
+- ReCoVERR and remaining related-work full-text extraction: **PARTIAL**; must be completed before final novelty wording.
+- Exhaustive systematic review: **NOT CLAIMED**.
