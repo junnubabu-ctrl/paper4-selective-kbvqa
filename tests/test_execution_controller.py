@@ -6,6 +6,7 @@ from paper4_kbvqa.execution.controller import (
     ExecutionConfig,
     leakage_safe_query,
     provenance_score,
+    provenance_components,
 )
 from paper4_kbvqa.types import Evidence
 
@@ -14,8 +15,8 @@ class FakeRetriever:
     def retrieve(self, query, top_k=10):
         assert "forbidden_gold_answer" not in query
         return [
-            Evidence("e1", "supporting evidence", "wikipedia"),
-            Evidence("e2", "other evidence", "wikidata"),
+            Evidence("e1", "supporting evidence", "wikipedia", "https://example.org/e1"),
+            Evidence("e2", "other evidence", "wikidata", "https://example.org/e2"),
         ][:top_k]
 
 
@@ -29,7 +30,6 @@ class FakeGeneration:
     answer: str = "answer"
     evidence_ids: tuple[str, ...] = ("e1",)
     confidence: float = 0.8
-    visual_consistency: float = 0.7
 
 
 class FakeGenerator:
@@ -93,8 +93,23 @@ def test_controller_never_routes_ground_truth():
     assert rec["answer"] == "answer"
     assert rec["abstain"] is False
     assert "forbidden_gold_answer" not in str(rec)
+    assert "provenance" in rec
+    assert rec["provenance"]["citation_validity"] == 1.0
+    assert rec["provenance"]["source_traceability"] == 1.0
 
 
 def test_provenance_is_fraction_of_valid_citations():
     evidence = [Evidence("e1", "a", "x"), Evidence("e2", "b", "y")]
     assert provenance_score(evidence, ["e1", "missing"]) == 0.5
+
+
+def test_provenance_components_are_auditable():
+    evidence = [
+        Evidence("e1", "a", "wikipedia", "https://example.org/1"),
+        Evidence("e2", "b", "wikidata", "https://example.org/2"),
+    ]
+    p = provenance_components(evidence, ["e1", "missing"])
+    assert p["citation_validity"] == 0.5
+    assert p["source_traceability"] == 1.0
+    assert p["source_diversity"] == 0.5
+    assert 0.0 <= p["composite"] <= 1.0
