@@ -1,10 +1,10 @@
 # Paper 4 — Reliable Selective KB-VQA
 
-Implementation-first PhD research repository for the working direction:
+Implementation-first PhD research repository for:
 
-**Evidence Verification and Selective Answering for Knowledge-Based Visual Question Answering with Large Language Models**
+**EviTrust-VQA: Provenance-Calibrated Evidence Verification and Selective Answering for Knowledge-Based Visual Question Answering**
 
-The experimentally defensible novelty target is narrower than the title: **source-traceable multi-source evidence, relevance filtering, contradiction/provenance-aware verification, validation-only confidence calibration, and risk-controlled selective answering under noisy external knowledge**.
+The experimentally defensible novelty target is: **source-traceable multi-source evidence, relevance filtering, explicit support/contradiction/insufficiency verification, provenance-aware reliability fusion, validation-only confidence calibration, and risk-controlled selective answering under noisy external knowledge**.
 
 ## Scientific status
 
@@ -16,139 +16,128 @@ No benchmark result is claimed until produced by an executed experiment. Synthet
 - A-OKVQA and OK-VQA manifest construction
 - modular Wikipedia, Wikidata, ConceptNet, and combined providers
 - local caching and checkpoint/resume support
-- relevance-aware evidence filtering
 - Qwen2.5-VL 3B lazy GPU adapter with token-likelihood confidence
-- visual-entity extraction path
-- evidence/provenance/contradiction verifier baseline
+- question-conditioned visual-entity extraction
+- transparent relevance filtering
+- separate Qwen evidence critic with SUPPORTED / CONTRADICTED / INSUFFICIENT probabilities
+- decomposed provenance: citation validity, source traceability, source diversity
+- cross-family DeBERTa NLI verification control
+- semantic reranking control
 - Platt, isotonic, and temperature calibration utilities
 - validation-only target-risk threshold selection
-- coverage, selective accuracy/risk, ECE, Brier, AURC utilities
-- paired bootstrap and McNemar count utilities
+- coverage, selective accuracy/risk, ECE, Brier, and AURC utilities
+- paired bootstrap and McNemar utilities
 - official-formula A-OKVQA direct-answer evaluation
-- B0/B1 baseline runners and full B2/B3 inference runner
-- B4/B5 validation-policy fit/apply workflow
-- controlled source/top-k ablation matrix generator
-- automatic CSV/Markdown/LaTeX table generation from recorded metrics
-- automatic risk–coverage PDF + 600-dpi PNG generation from recorded predictions
-- free-GPU end-to-end notebook
+- **clean matched B0-B3 runner**
+- B4/B5 calibration and selective-policy workflow
+- deterministic calibration/evaluation data separation
+- selective COCO image downloader for bounded calibration runs
+- automatic B0-B5 result-summary export
+- controlled source/top-k ablation framework
+- automatic paper tables/figures from recorded metrics
+- final free-GPU execution notebook
 
-Current CPU gate: **17/17 tests passed** at the packaging checkpoint.
+## One-click execution path
 
-Full OK-VQA/A-OKVQA VLM benchmark experiments are **NOT EXECUTED** in this ChatGPT container because CUDA is unavailable.
+Use the final notebook:
 
-## Repository workflow
+**[`notebooks/Paper4_Final_Free_GPU_Execution.ipynb`](notebooks/Paper4_Final_Free_GPU_Execution.ipynb)**
 
-### 1. CPU integrity gate
+In Google Colab or Kaggle:
+
+1. Enable a CUDA GPU.
+2. Open the notebook.
+3. Keep `EVAL_MAX=None` for the real evaluation run.
+4. Run all cells from top to bottom.
+5. Preserve the generated `results/` artifacts.
+6. Push the real results back to this repository before manuscript population.
+
+The notebook automatically performs:
+
+- environment and CUDA audit
+- unit/leakage tests
+- official A-OKVQA annotation preparation
+- COCO validation-image setup
+- fixed A-OKVQA training calibration subset using seed 2026
+- selective download of calibration images
+- B3 calibration inference
+- validation-only Platt calibration and 5% target-risk selection
+- matched B0/B1/B2/B3 execution on untouched A-OKVQA validation data
+- B4 calibrated evaluation
+- B5 selective evaluation
+- automatic generation of `results/metrics/aokvqa_B0_B5_summary.json`
+
+## Matched experimental progression
+
+- **B0** — Qwen2.5-VL image + question only
+- **B1** — B0 + raw multi-source evidence
+- **B2** — B1 + relevance filtering
+- **B3** — B2 + separate evidence critic + provenance-aware reliability
+- **B4** — B3 + validation-fitted calibration
+- **B5** — B4 + validation-frozen target-risk selective answering
+
+The same question IDs and generator contract must be used for matched comparisons.
+
+## Manual command equivalent
 
 ```bash
-python scripts/inspect_environment.py
-PYTHONPATH=src pytest -q
-PYTHONPATH=src python scripts/dev_smoke.py
+python scripts/run_variants.py --manifest <manifest> --variant B0 --out results/predictions/B0.jsonl --checkpoint results/checkpoints/B0.json
+python scripts/run_variants.py --manifest <manifest> --variant B1 --out results/predictions/B1.jsonl --checkpoint results/checkpoints/B1.json
+python scripts/run_variants.py --manifest <manifest> --variant B2 --out results/predictions/B2.jsonl --checkpoint results/checkpoints/B2.json
+python scripts/run_variants.py --manifest <manifest> --variant B3 --out results/predictions/B3.jsonl --checkpoint results/checkpoints/B3.json
 ```
 
-### 2. Free-GPU development run
-
-Open:
-
-```text
-notebooks/Paper4_End_to_End_Free_GPU.ipynb
-```
-
-Use Kaggle GPU or Colab Free. `DEV_MODE=True` is the default; do not promote development-subset metrics to paper results.
-
-### 3. Build an official-data manifest
-
-A-OKVQA example:
-
-```bash
-python scripts/build_manifest.py aokvqa \
-  --aokvqa-dir datasets/aokvqa \
-  --coco-dir datasets/coco \
-  --split val \
-  --out datasets/manifests/aokvqa_val.jsonl
-```
-
-### 4. Run baseline progression
-
-```bash
-python scripts/run_baseline.py --manifest datasets/manifests/aokvqa_val.jsonl \
-  --baseline B0 --out results/predictions/b0_val.jsonl \
-  --checkpoint checkpoints/b0_val.json
-
-python scripts/run_baseline.py --manifest datasets/manifests/aokvqa_val.jsonl \
-  --baseline B1 --out results/predictions/b1_val.jsonl \
-  --checkpoint checkpoints/b1_val.json
-
-python scripts/run_proposed.py --manifest datasets/manifests/aokvqa_val.jsonl \
-  --out results/predictions/b3_val.jsonl \
-  --checkpoint checkpoints/b3_val.json
-```
-
-### 5. Fit calibration/selective policy on validation only
+Fit calibration and the selective policy only on the fixed calibration subset:
 
 ```bash
 python scripts/fit_selective_policy.py \
-  --manifest datasets/manifests/aokvqa_val.jsonl \
-  --predictions results/predictions/b3_val.jsonl \
+  --manifest <calibration_manifest> \
+  --predictions <calibration_B3_predictions> \
   --target-risk 0.05 \
-  --out results/metrics/selective_policy.json
+  --out results/policies/aokvqa_policy_5pct.json
 ```
 
-Freeze the resulting policy. Do not refit on the held-out final test split.
-
-### 6. Apply the frozen policy and evaluate
+Apply that policy unchanged to held-out B3 predictions:
 
 ```bash
 python scripts/apply_selective_policy.py \
-  --policy results/metrics/selective_policy.json \
-  --predictions results/predictions/b3_test.jsonl \
-  --out results/predictions/b5_test.jsonl
-
-python scripts/evaluate.py \
-  --manifest datasets/manifests/aokvqa_test_w_ans.jsonl \
-  --predictions results/predictions/b5_test.jsonl \
-  --dataset aokvqa --confidence-field calibrated_confidence \
-  --out results/metrics/b5_test.json
+  --policy results/policies/aokvqa_policy_5pct.json \
+  --predictions <heldout_B3_predictions> \
+  --out results/predictions/B5.jsonl
 ```
 
-For OK-VQA, this repository labels its built-in raw-string consensus score as **auxiliary**. Publication reporting should use the official VQA evaluation toolchain.
+## Result artifacts required before manuscript claims
 
-### 7. Controlled ablations
+A manuscript-ready benchmark release should contain at least:
 
-Generate a dry-run matrix first:
+- `results/predictions/aokvqa_val_B0.jsonl`
+- `results/predictions/aokvqa_val_B1.jsonl`
+- `results/predictions/aokvqa_val_B2.jsonl`
+- `results/predictions/aokvqa_val_B3.jsonl`
+- `results/predictions/aokvqa_val_B5.jsonl`
+- `results/policies/aokvqa_policy_5pct.json`
+- `results/metrics/aokvqa_val_B0.json`
+- `results/metrics/aokvqa_val_B1.json`
+- `results/metrics/aokvqa_val_B2.json`
+- `results/metrics/aokvqa_val_B3.json`
+- `results/metrics/aokvqa_val_B4.json`
+- `results/metrics/aokvqa_val_B5.json`
+- `results/metrics/aokvqa_B0_B5_summary.json`
 
-```bash
-python scripts/run_ablations.py \
-  --manifest datasets/manifests/aokvqa_val.jsonl \
-  --out-dir results/ablations
-```
-
-Execute only after the development gate passes:
-
-```bash
-python scripts/run_ablations.py ... --execute
-```
-
-### 8. Generate manuscript assets from actual recorded results
-
-```bash
-python scripts/generate_paper_assets.py \
-  --metrics results/metrics/b0_test.json results/metrics/b5_test.json
-```
-
-No table values are manually hard-coded by the asset generator.
-
-## Free/open-resource policy
-
-The default path uses PyTorch, Hugging Face Transformers, FAISS/Sentence Transformers where applicable, free public knowledge resources, and a locally downloaded open model. No paid OpenAI, Anthropic, Gemini, commercial inference, paid vector database, or paid GPU endpoint is required.
+After the main result gate, run the prespecified verifier, source, top-k, reranking, corruption, statistics, and efficiency experiments.
 
 ## Integrity rules
 
 - Ground-truth answers never enter retrieval queries, generation prompts, evidence ranking, or verification.
-- Calibration and operating-threshold selection use held-out validation data only.
-- Final test data are evaluation-only.
+- Calibration and operating-threshold selection use separate calibration data only.
+- Held-out evaluation data are never used to tune weights, prompts, top-k, or thresholds.
+- Synthetic smoke metrics are never reported as benchmark results.
 - Do not fabricate accuracy, p-values, confidence intervals, runtime, VRAM, baselines, or ablations.
 - Do not commit datasets, model weights, secrets, or large caches.
-- Label every partial/subset experiment with its exact sample count and split.
+- Label every partial/subset experiment with exact sample count, split, model revision, seed, and hardware.
 
-See `REPRODUCIBILITY.md`, `EXPERIMENT_PLAN.md`, `docs/novelty_audit.md`, and `IMPLEMENTATION_STATUS.md` before any manuscript claim is written.
+## Resource policy
+
+The default path uses PyTorch, Hugging Face Transformers, public knowledge resources, and open models. No paid OpenAI, Anthropic, Gemini, commercial vector database, or paid inference endpoint is required.
+
+See `REPRODUCIBILITY.md`, `EXPERIMENT_PLAN.md`, `docs/novelty_audit.md`, and `IMPLEMENTATION_STATUS.md` before promoting any number into the manuscript.
