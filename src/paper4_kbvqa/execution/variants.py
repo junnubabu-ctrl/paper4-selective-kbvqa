@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 import json
+import os
 import time
 from typing import Sequence
 
@@ -41,6 +42,7 @@ class MatchedVariantRunner:
         evidence_filter=None,
         critic=None,
         config: ExecutionConfig | None = None,
+        corruption=None,
     ):
         variant = str(variant).upper()
         if variant not in VALID_VARIANTS:
@@ -57,6 +59,7 @@ class MatchedVariantRunner:
         self.evidence_filter = evidence_filter
         self.critic = critic
         self.config = config or ExecutionConfig()
+        self.corruption = corruption
         self.config.validate()
 
     def _retrieve(self, query: str) -> list[Evidence]:
@@ -126,7 +129,13 @@ class MatchedVariantRunner:
         filter_scores: dict = {}
 
         if self.variant != "B0":
-            retrieved = self._retrieve(query)
+            if hasattr(self.provider, 'retrieve_for_question'):
+                retrieved=list(self.provider.retrieve_for_question(sample.question,visual_entities,
+                    limit=self.config.retrieval_top_k))
+            else:
+                retrieved = self._retrieve(query)
+            if self.corruption is not None:
+                retrieved = self.corruption(retrieved, sample.question_id)
 
         if self.variant == "B1":
             selected = retrieved[: self.config.filtered_top_k]
@@ -210,6 +219,7 @@ class MatchedVariantRunner:
             "supporting_evidence_ids": cited,
             "evidence": [asdict(e) for e in selected],
             "retrieved_evidence_ids": [str(e.evidence_id) for e in retrieved],
+            "retrieved_evidence": [asdict(e) for e in retrieved],
             "filtered_evidence_ids": [str(e.evidence_id) for e in selected],
             "filter_scores": filter_scores,
             "generation_confidence": generation_confidence,
@@ -241,10 +251,30 @@ class MatchedVariantRunner:
 
         completed: set[str] = set()
         errors: list[dict] = []
-        if checkpoint_json.exists():
-            state = json.loads(checkpoint_json.read_text(encoding="utf-8"))
-            completed = {str(x) for x in state.get("completed_question_ids", [])}
-            errors = list(state.get("errors", []))
+        # Predictions are authoritative: a crash can occur between the durable
+        # prediction write and the checkpoint update. Never duplicate that row.
+        expected = {str(s.question_id) for s in samples}
+        if len(expected) != len(samples):
+            raise ValueError("Duplicate manifest question IDs")
+        if output_jsonl.exists():
+            with output_jsonl.open("rb+") as existing:
+                while True:
+                    offset = existing.tell()
+                    line = existing.readline()
+                    if not line:
+                        break
+                    if not line.endswith(b"\n"):
+                        # Only an interrupted final write may be discarded.
+                        existing.truncate(offset)
+                        break
+                    rec = json.loads(line)
+                    qid = str(rec["question_id"])
+                    if qid in completed or qid not in expected:
+                        raise ValueError("Duplicate or foreign prediction ID: " + qid)
+                    checksum = rec.pop("record_sha256", None)
+                    if rec.get("variant") != self.variant or checksum != record_checksum(rec):
+                        raise ValueError("Prediction checksum/variant mismatch: " + qid)
+                    completed.add(qid)
 
         with output_jsonl.open("a", encoding="utf-8") as out:
             for sample in samples:
@@ -255,6 +285,7 @@ class MatchedVariantRunner:
                     rec = self.run_one(sample)
                     out.write(json.dumps(rec, ensure_ascii=False) + "\n")
                     out.flush()
+                    os.fsync(out.fileno())
                     completed.add(qid)
                 except Exception as exc:
                     errors.append({"question_id": qid, "error": repr(exc)})
@@ -274,6 +305,11 @@ class MatchedVariantRunner:
                     encoding="utf-8",
                 )
                 tmp.replace(checkpoint_json)
+                print(f"{self.variant}: {len(completed)}/{len(samples)} completed; {len(errors)} errors", flush=True)
+                if errors:
+                    # Surface download/model/CUDA failures immediately instead
+                    # of looping through the complete dataset and reporting success.
+                    raise RuntimeError(f"Inference failed; resume after resolving: {errors[-1]}")
 
         return {
             "variant": self.variant,

@@ -1,9 +1,9 @@
+"""Prepare official annotation metadata; image downloads are a separate step."""
+from __future__ import annotations
 from pathlib import Path as _Path
 import sys as _sys
 _ROOT=_Path(__file__).resolve().parents[1]
 if str(_ROOT / "src") not in _sys.path: _sys.path.insert(0, str(_ROOT / "src"))
-"""Prepare official annotation metadata. COCO images are intentionally not auto-downloaded here."""
-from __future__ import annotations
 import argparse, json, os, subprocess
 from pathlib import Path
 

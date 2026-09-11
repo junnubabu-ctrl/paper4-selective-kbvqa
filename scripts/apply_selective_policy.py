@@ -13,11 +13,18 @@ def main():
     ap=argparse.ArgumentParser(description="Apply a frozen validation-fitted calibration/threshold policy to held-out predictions")
     ap.add_argument("--policy",required=True); ap.add_argument("--predictions",required=True); ap.add_argument("--out",required=True); args=ap.parse_args()
     policy=json.loads(Path(args.policy).read_text(encoding="utf-8")); cal=PlattCalibrator.from_dict(policy["calibrator"]); t=float(policy["threshold"])
+    from paper4_kbvqa.execution.study import read_rows
+    from paper4_kbvqa.execution.controller import record_checksum
+    rows=read_rows(args.predictions)
+    if {str(x['question_id']) for x in rows} & set(map(str,policy['question_ids'])):
+        raise ValueError('Policy calibration IDs overlap evaluation predictions')
     Path(args.out).parent.mkdir(parents=True,exist_ok=True)
     with open(args.predictions,encoding="utf-8") as src, open(args.out,"w",encoding="utf-8") as dst:
         for line in src:
             if not line.strip(): continue
             x=json.loads(line); c=float(cal.predict([float(x["raw_confidence"])])[0]); answer=selective_decision(c,t)
             x["calibrated_confidence"]=c; x["threshold"]=t; x["abstain"]=not answer; x["selective_answer"]=x["answer"] if answer else "<ABSTAIN>"
+            x.pop('record_sha256',None)
+            x['record_sha256']=record_checksum(x)
             dst.write(json.dumps(x,ensure_ascii=False)+"\n")
 if __name__=="__main__": main()

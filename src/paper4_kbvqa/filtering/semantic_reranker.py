@@ -20,8 +20,10 @@ class SentenceTransformerReranker:
         *,
         semantic_weight: float = 0.85,
         retrieval_weight: float = 0.15,
+        revision: str = "main",
     ):
         self.model_id = model_id
+        self.revision = revision
         self.semantic_weight = float(semantic_weight)
         self.retrieval_weight = float(retrieval_weight)
         self._model = None
@@ -29,7 +31,7 @@ class SentenceTransformerReranker:
     def _load(self):
         if self._model is None:
             from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(self.model_id)
+            self._model = SentenceTransformer(self.model_id, revision=self.revision)
 
     def select(
         self,

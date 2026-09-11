@@ -21,7 +21,8 @@ def aokvqa(args):
             "image_path":str(image_path),
             "question":x["question"],
             "answers":x.get("direct_answers",[]),
-            "metadata":{"dataset":"aokvqa","split":args.split,"image_id":x["image_id"]},
+            "metadata":{"dataset":"aokvqa","split":args.split,"image_id":x["image_id"],
+                        "difficult_direct_answer":x["difficult_direct_answer"]},
         })
     write_jsonl(args.out,rows)
 
@@ -31,11 +32,11 @@ def okvqa(args):
     anns={}
     if args.annotations:
         raw=json.loads(Path(args.annotations).read_text(encoding="utf-8"))["annotations"]
-        anns={int(x["question_id"]):[a["answer"] for a in x.get("answers",[])] for x in raw}
+        anns={int(x["question_id"]):x for x in raw}
     rows=[]
     for x in q:
-        image_path=Path(args.coco_dir)/args.image_dir/f"{int(x['image_id']):012d}.jpg"
-        rows.append({"question_id":str(x["question_id"]),"image_path":str(image_path),"question":x["question"],"answers":anns.get(int(x["question_id"]),[]),"metadata":{"dataset":"okvqa","image_id":x["image_id"]}})
+        image_path=Path(args.coco_dir)/args.image_dir/f"COCO_{args.image_dir}_{int(x['image_id']):012d}.jpg"
+        rows.append({"question_id":str(x["question_id"]),"image_path":str(image_path),"question":x["question"],"answers":[a["answer"] for a in anns.get(int(x["question_id"]),{}).get("answers",[])],"metadata":{"dataset":"okvqa","image_id":x["image_id"],"split":args.image_dir,"official_annotation":anns.get(int(x["question_id"]))}})
     write_jsonl(args.out,rows)
 
 

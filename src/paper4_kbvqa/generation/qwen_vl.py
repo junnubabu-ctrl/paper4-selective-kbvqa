@@ -15,11 +15,12 @@ class Qwen25VLGenerator(AnswerGenerator):
     probability. Paper-level confidence is produced only after validation-set
     calibration.
     """
-    def __init__(self, model_name="Qwen/Qwen2.5-VL-3B-Instruct", revision="main", load_in_4bit=True, max_pixels=None):
+    def __init__(self, model_name="Qwen/Qwen2.5-VL-3B-Instruct", revision="main", load_in_4bit=True, max_pixels=None, include_evidence_ids=True):
         self.model_name=model_name
         self.revision=revision
         self.load_in_4bit=load_in_4bit
         self.max_pixels=max_pixels
+        self.include_evidence_ids=include_evidence_ids
         self._loaded=False
 
     def _load(self):
@@ -66,7 +67,8 @@ class Qwen25VLGenerator(AnswerGenerator):
                     return ans, ids
             except Exception:
                 pass
-        return text.strip(), fallback_ids
+        # Parse failure must not manufacture citations for every supplied item.
+        return text.strip(), []
 
     def extract_visual_entities(self, image_path: str, question: str, max_entities: int = 8) -> list[str]:
         if not self._loaded:
@@ -113,6 +115,11 @@ class Qwen25VLGenerator(AnswerGenerator):
             "answer must be concise. evidence_ids must contain only supplied IDs that directly support the answer.\n"
             f"Question: {question}\nEvidence:\n{evidence_text}"
         )
+        if not self.include_evidence_ids:
+            evidence_text="\n".join(x['text'] for x in payload['evidence']) or "No external evidence supplied."
+            prompt=("Answer the visual question using the image and only relevant supplied evidence. "
+                    "Return strict JSON with only the key answer; keep the answer concise.\n"
+                    f"Question: {question}\nEvidence:\n{evidence_text}")
         image = Image.open(image_path).convert('RGB')
         messages=[{"role":"user","content":[{"type":"image","image":image},{"type":"text","text":prompt}]}]
         text=self.processor.apply_chat_template(messages,tokenize=False,add_generation_prompt=True)
@@ -137,5 +144,5 @@ class Qwen25VLGenerator(AnswerGenerator):
         fallback_ids=[e.evidence_id for e in evidence]
         answer, support_ids=self._parse_output(decoded, fallback_ids)
         allowed=set(fallback_ids)
-        support_ids=[x for x in support_ids if x in allowed]
+        support_ids=[x for x in support_ids if x in allowed] if self.include_evidence_ids else []
         return {"answer":answer,"raw_confidence":raw_conf,"supporting_evidence_ids":support_ids,"raw_text":decoded}
