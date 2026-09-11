@@ -15,7 +15,7 @@ def main():
     ap=argparse.ArgumentParser(description="Download only COCO images referenced by a manifest.")
     ap.add_argument("--manifest",required=True)
     ap.add_argument("--out-dir",required=True)
-    ap.add_argument("--split",choices=["train2017","val2017"],required=True)
+    ap.add_argument("--split",choices=["train2017","val2017","train2014","val2014"],required=True)
     ap.add_argument("--base-url",default="https://images.cocodataset.org")
     args=ap.parse_args()
 
@@ -34,7 +34,7 @@ def main():
         if image_id is None:
             failures.append({"question_id":s.question_id,"reason":"missing image_id"})
             continue
-        name=f"{int(image_id):012d}.jpg"
+        name=(f"COCO_{args.split}_" if args.split.endswith("2014") else "")+f"{int(image_id):012d}.jpg"
         dest=out/name
         if dest.exists() and valid_image(dest):
             continue

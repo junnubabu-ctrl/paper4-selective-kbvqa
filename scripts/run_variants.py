@@ -62,6 +62,7 @@ def main():
     ap.add_argument("--filtered-top-k",type=int,default=5)
     ap.add_argument("--max-samples",type=int)
     ap.add_argument("--max-pixels",type=int)
+    ap.add_argument("--no-evidence-ids",action="store_true")
     ap.add_argument("--no-4bit",action="store_true")
     args=ap.parse_args()
 
@@ -86,6 +87,7 @@ def main():
         revision=args.generator_revision,
         load_in_4bit=not args.no_4bit,
         max_pixels=args.max_pixels,
+        include_evidence_ids=not args.no_evidence_ids,
     )
 
     provider=None

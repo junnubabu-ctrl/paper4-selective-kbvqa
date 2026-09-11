@@ -1,3 +1,7 @@
+## Two-dataset execution update
+
+The pipeline now supports official-format A-OKVQA and OK-VQA v1.1 scoring, COCO 2014/2017 images, 87 extended configurations per dataset, three corruption seeds, evidence-ID-removal controls and paired selective intervals. CI installs reporting dependencies. These are implementation changes; GPU results remain absent.
+
 ## September 11 execution update
 
 A resumable A-OKVQA study runner and persistent Colab workflow are implemented. CPU regression and fixture-based postprocessing checks pass; GPU inference and live APIs are unverified. No scientific results were generated. See `docs/AUTOMATED_STUDY.md` for exact scope and outstanding requirements. Historical implementation notes below do not constitute benchmark evidence.

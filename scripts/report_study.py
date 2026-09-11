@@ -30,10 +30,10 @@ def holm(pvalues):
 
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('--results',required=True); args=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('--results',required=True); p.add_argument('--dataset',choices=['aokvqa','okvqa'],default='aokvqa'); args=p.parse_args()
     root=Path(args.results); out=root/'report'; out.mkdir(exist_ok=True)
     metrics={f.stem:json.loads(f.read_text()) for f in sorted((root/'metrics').glob('*.json'))
-             if f.name!='aokvqa_B0_B5_summary.json'}
+             if not f.name.endswith('_B0_B5_summary.json')}
     table=[]
     for name,m in metrics.items():
         cal=m.get('calibration',{}); sel=m.get('selective',{})
@@ -46,7 +46,7 @@ def main():
     pairs=[('B1','B0'),('B2','B1'),('B3','B2'),('B3','B0')]
     tests=[]
     for av,bv in pairs:
-        a,b=aligned(metrics['aokvqa_val_'+av],metrics['aokvqa_val_'+bv])
+        a,b=aligned(metrics[args.dataset+'_val_'+av],metrics[args.dataset+'_val_'+bv])
         diff=paired_bootstrap_accuracy([x['soft_score'] for x in a],[x['soft_score'] for x in b],n_boot=2000,seed=2026)
         counts=mcnemar_counts([x['correct_full_credit'] for x in a],[x['correct_full_credit'] for x in b])
         discordant=sum(counts.values())
@@ -54,9 +54,19 @@ def main():
         tests.append({'a':av,'b':bv,'soft_accuracy_difference_fraction':diff,
                       'mcnemar_full_credit':counts,'p_value_exact':pv})
     for row,pv in zip(tests,holm([x['p_value_exact'] for x in tests])): row['p_value_holm']=pv
+    from paper4_kbvqa.evaluation.statistics import paired_selective_bootstrap
+    selective_intervals=[]
+    for baseline in ['B0_selective','B1_selective']:
+        if baseline not in metrics: continue
+        a_metric=metrics[args.dataset+'_val_B5']; b_metric=metrics[baseline]
+        a,b=aligned(a_metric,b_metric)
+        ci=paired_selective_bootstrap([x['confidence'] for x in a],[x['correct_full_credit'] for x in a],a_metric['threshold'],
+            [x['confidence'] for x in b],[x['correct_full_credit'] for x in b],b_metric['threshold'])
+        selective_intervals.append({'a':'B5','b':baseline,'intervals':ci,
+            'interpretation':'Pointwise percentile intervals; no simultaneous-coverage claim. Undefined zero-coverage draws are counted.'})
     efficiency={}; support={}
     for path in sorted((root/'predictions').glob('*.jsonl')):
-        if path.name.endswith('.sessions.jsonl') or path.name.endswith('_calibrated.jsonl') or path.stem in {'aokvqa_val_B4','aokvqa_val_B5'}: continue
+        if path.name.endswith('.sessions.jsonl') or path.name.endswith('_calibrated.jsonl') or path.stem in {args.dataset+'_val_B4',args.dataset+'_val_B5'}: continue
         rows=read_rows(path)
         if not rows: continue
         latency=np.asarray([x['latency_s'] for x in rows])
@@ -78,16 +88,16 @@ def main():
     import matplotlib.pyplot as plt
     fig,ax=plt.subplots(figsize=(6,4))
     for v in ['B0','B1','B2','B3','B4']:
-        rows=metrics['aokvqa_val_'+v]['per_question']
+        rows=metrics[args.dataset+'_val_'+v]['per_question']
         coverage,risk=risk_coverage_curve([x['confidence'] for x in rows],[x['correct_full_credit'] for x in rows])
         ax.plot(coverage,risk,label=v)
     ax.set(xlabel='Coverage',ylabel='Full-credit error rate',xlim=(0,1),ylim=(0,1)); ax.legend(); fig.tight_layout()
     fig.savefig(out/'risk_coverage.png',dpi=600); fig.savefig(out/'risk_coverage.pdf'); plt.close(fig)
-    report={'statistics':tests,'bootstrap_replicates':2000,'seed':2026,'efficiency':efficiency,'evidence_diagnostics':support,
-            'scope':'A-OKVQA; observed results only',
+    report={'statistics':tests,'selective_intervals':selective_intervals,'bootstrap_replicates':2000,'seed':2026,'efficiency':efficiency,'evidence_diagnostics':support,
+            'scope':args.dataset+'; observed results only',
             'limitations':['Calibration target risk is empirical, not a certified risk bound.',
                           'Corruption injections are controlled perturbations, not natural contradiction labels.',
-                          'Independent evidence support, external baselines and official OK-VQA evaluation remain necessary.']}
+                          'Independent evidence support, external baselines and scientific review remain necessary.']}
     write_json(out/'study_report.json',report)
     files={str(f.relative_to(root)):hashlib.sha256(f.read_bytes()).hexdigest()
            for folder in ['predictions','metrics','policies','manifests','report']

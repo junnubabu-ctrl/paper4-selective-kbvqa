@@ -90,16 +90,19 @@ def test_all_scripts_and_notebook_cells_compile():
 def test_plan_requires_no_gpu():
     output=subprocess.check_output([sys.executable,str(ROOT/'scripts/run_full_study.py'),'--plan'],text=True)
     plan=json.loads(output)
-    assert len(plan['experiments'])==38
+    assert len(plan['experiments'])==87
     assert all(x['variant'] in {'B0','B1','B2','B3'} for x in plan['experiments'])
 
 
-def test_cpu_postprocessing_end_to_end(tmp_path):
+@pytest.mark.parametrize("dataset",["aokvqa","okvqa"])
+def test_cpu_postprocessing_end_to_end(tmp_path,dataset):
     """Synthetic fixture validates plumbing only; all files remain in tmp_path."""
     cal=tmp_path/'cal.jsonl'; val=tmp_path/'val.jsonl'; cp=tmp_path/'cal_pred.jsonl'
     def samples(prefix):
         return [{'question_id':f'{prefix}{i}','image_path':'x','question':'?',
-                 'answers':['cat']*3,'metadata':{'difficult_direct_answer':False}} for i in range(8)]
+                 'answers':['cat']*10,'metadata':{'difficult_direct_answer':False,'official_annotation':{
+                     'question_type':'other','answer_type':'other','question_id':f'{prefix}{i}',
+                     'answers':[{'answer':'cat','answer_id':j} for j in range(10)]}}} for i in range(8)]
     def preds(prefix):
         return [{'question_id':f'{prefix}{i}','answer':'cat' if i%2 else 'dog',
                  'raw_confidence':.9 if i%2 else .1,'latency_s':.01,'retrieved_evidence':[],
@@ -110,22 +113,22 @@ def test_cpu_postprocessing_end_to_end(tmp_path):
     def call(script,*args):
         subprocess.run([sys.executable,str(ROOT/'scripts'/script),*map(str,args)],check=True,capture_output=True,text=True)
     policy=tmp_path/'policies/p.json'
-    call('fit_selective_policy.py','--manifest',cal,'--predictions',cp,'--out',policy)
+    call('fit_selective_policy.py','--manifest',cal,'--predictions',cp,'--dataset',dataset,'--out',policy)
     for v in ['B0','B1','B2','B3']:
-        pred=tmp_path/f'predictions/aokvqa_val_{v}.jsonl'; write(pred,preds('v'))
-        call('evaluate.py','--manifest',val,'--predictions',pred,'--dataset','aokvqa','--out',tmp_path/f'metrics/aokvqa_val_{v}.json')
+        pred=tmp_path/f'predictions/{dataset}_val_{v}.jsonl'; write(pred,preds('v'))
+        call('evaluate.py','--manifest',val,'--predictions',pred,'--dataset',dataset,'--out',tmp_path/f'metrics/{dataset}_val_{v}.json')
     applied=tmp_path/'predictions/applied_calibrated.jsonl'
     call('apply_selective_policy.py','--policy',policy,'--predictions',pred,'--out',applied)
     for v in ['B4','B5']:
         extra=['--threshold',json.loads(policy.read_text())['threshold']] if v=='B5' else []
-        call('evaluate.py','--manifest',val,'--predictions',applied,'--dataset','aokvqa',
-             '--confidence-field','calibrated_confidence',*extra,'--out',tmp_path/f'metrics/aokvqa_val_{v}.json')
+        call('evaluate.py','--manifest',val,'--predictions',applied,'--dataset',dataset,
+             '--confidence-field','calibrated_confidence',*extra,'--out',tmp_path/f'metrics/{dataset}_val_{v}.json')
     args=[]
-    for v in ['B0','B1','B2','B3','B4','B5']: args+=['--'+v.lower(),tmp_path/f'metrics/aokvqa_val_{v}.json']
-    summary=tmp_path/'metrics/aokvqa_B0_B5_summary.json'
+    for v in ['B0','B1','B2','B3','B4','B5']: args+=['--'+v.lower(),tmp_path/f'metrics/{dataset}_val_{v}.json']
+    summary=tmp_path/f'metrics/{dataset}_B0_B5_summary.json'
     call('summarize_variants.py',*args,'--out',summary)
     assert json.loads(summary.read_text())['B5']['risk']==0
-    call('report_study.py','--results',tmp_path)
+    call('report_study.py','--results',tmp_path,'--dataset',dataset)
     report=json.loads((tmp_path/'report/study_report.json').read_text())
     assert len(report['statistics'])==4
     assert (tmp_path/'report/risk_coverage.png').stat().st_size>0

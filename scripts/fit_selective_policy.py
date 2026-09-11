@@ -24,23 +24,28 @@ def load_predictions(path):
 def main():
     ap=argparse.ArgumentParser(description="Fit Platt calibration + selective threshold on validation data only")
     ap.add_argument("--manifest",required=True); ap.add_argument("--predictions",required=True); ap.add_argument("--out",required=True); ap.add_argument("--target-risk",type=float,default=.05)
+    ap.add_argument("--dataset",choices=["aokvqa","okvqa"],default="aokvqa")
     args=ap.parse_args()
     manifest=load_jsonl(args.manifest); preds=load_predictions(args.predictions)
     from paper4_kbvqa.execution.study import validate_predictions
     validate_predictions(args.manifest,args.predictions)
+    official_scores={}
+    if args.dataset=='okvqa':
+        from paper4_kbvqa.evaluation.okvqa import score_predictions
+        official_scores=score_predictions(manifest,preds)
     scores=[]; correct=[]; used=[]
     for s in manifest:
         if s.metadata.get("difficult_direct_answer",False): continue
         p=preds.get(s.question_id)
         if p is None or not s.answers: continue
         # Full-credit event: prediction receives maximal A-OKVQA/VQA-style agreement credit.
-        soft=direct_answer_score(str(p["answer"]), list(s.answers))
+        soft=official_scores[s.question_id] if args.dataset=="okvqa" else direct_answer_score(str(p["answer"]), list(s.answers))
         scores.append(float(p["raw_confidence"])); correct.append(int(soft>=1.0)); used.append(s.question_id)
     if len(set(correct))<2: raise RuntimeError("Validation labels need both correct and incorrect examples for calibration")
     cal=PlattCalibrator().fit(scores,correct); calibrated=cal.predict(scores)
     policy=choose_threshold_for_target_risk(calibrated,correct,target_risk=args.target_risk)
     payload={
-        "calibrator":cal.to_dict(),"threshold":policy["threshold"],"validation_coverage":policy["coverage"],"validation_risk":policy["risk"],
+        "dataset":args.dataset,"calibrator":cal.to_dict(),"threshold":policy["threshold"],"validation_coverage":policy["coverage"],"validation_risk":policy["risk"],
         "target_risk":args.target_risk,"n_validation":len(scores),"correctness_event":"full_credit",
         "validation_ece":expected_calibration_error(calibrated,correct),"validation_brier":brier_score(calibrated,correct),"validation_aurc":aurc(calibrated,correct),
         "question_ids":used,

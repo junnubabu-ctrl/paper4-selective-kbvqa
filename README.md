@@ -41,9 +41,9 @@ No benchmark result is claimed until produced by an executed experiment. Synthet
 
 Open [`notebooks/Paper4_Final_Free_GPU_Execution.ipynb`](notebooks/Paper4_Final_Free_GPU_Execution.ipynb) from the branch containing this change. Enable a CUDA GPU, run the cells, and authorize Drive mounting. The notebook freezes code/model revisions, preserves run files in Drive, and exports a results ZIP. Keep `EVAL_MAX=None` for full validation inference. Free-GPU runtime completion is not guaranteed.
 
-The extended workflow adds a 38-configuration matched inference matrix, separate calibration, frozen-policy corruption evaluation, target-risk sensitivity, paired accuracy statistics, CSV tables and 600-dpi risk-coverage figures. It stops on errors and resumes from validated predictions. CPU tests have passed; GPU benchmarks have **not** been executed in the authoring environment.
+The extended workflow adds an 87-configuration matched inference matrix per dataset, separate calibration, frozen-policy corruption evaluation, target-risk sensitivity, paired accuracy statistics, CSV tables and 600-dpi risk-coverage figures. It stops on errors and resumes from validated predictions. CPU tests have passed; GPU benchmarks have **not** been executed in the authoring environment.
 
-See [the execution guide](docs/AUTOMATED_STUDY.md) for commands, evaluation definitions, output locations, remaining scientific requirements and limitations. This workflow covers A-OKVQA. Official OK-VQA results, external baselines and additional paper requirements remain outstanding.
+See [the execution guide](docs/AUTOMATED_STUDY.md) for commands, evaluation definitions, output locations, remaining scientific requirements and limitations. This workflow supports both A-OKVQA and OK-VQA. Both datasets still need actual GPU runs; external baselines and independent evidence-support assessment remain outstanding.
 
 ## Matched experimental progression
 

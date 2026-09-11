@@ -52,6 +52,10 @@ def evaluate_rows(manifest_path: str, prediction_path: str, *, dataset: str, con
     preds = _load_predictions(prediction_path)
     per_question: list[dict[str, Any]] = []
     missing = []
+    official_scores={}
+    if dataset=='okvqa':
+        from paper4_kbvqa.evaluation.okvqa import score_predictions
+        official_scores=score_predictions(samples,preds)
 
     for s in samples:
         if dataset == "aokvqa" and s.metadata.get("difficult_direct_answer", False):
@@ -67,8 +71,8 @@ def evaluate_rows(manifest_path: str, prediction_path: str, *, dataset: str, con
             soft = direct_answer_score(answer, list(s.answers))
             metric_name = "A-OKVQA direct-answer official formula"
         else:
-            soft = _vqa_consensus_aux(answer, list(s.answers))
-            metric_name = "auxiliary raw-string VQA consensus (run official OK-VQA evaluator for publication)"
+            soft = official_scores[s.question_id]
+            metric_name = "Upstream VQA evaluator on OK-VQA v1.1 annotations (Python 3 print adaptation)"
         confidence = p.get(confidence_field)
         per_question.append({
             "question_id": s.question_id,

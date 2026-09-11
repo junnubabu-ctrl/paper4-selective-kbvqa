@@ -35,3 +35,6 @@ analysis = ["matplotlib>=3.8", "scipy>=1.11"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.setuptools.package-data]
+"paper4_kbvqa.evaluation.vendor" = ["VQA_LICENSE.txt"]
