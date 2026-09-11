@@ -37,37 +37,13 @@ No benchmark result is claimed until produced by an executed experiment. Synthet
 - automatic paper tables/figures from recorded metrics
 - final free-GPU execution notebook
 
-## One-click execution path
+## Resumable Colab execution
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/junnubabu-ctrl/paper4-selective-kbvqa/blob/main/notebooks/Paper4_Final_Free_GPU_Execution.ipynb)
+Open [`notebooks/Paper4_Final_Free_GPU_Execution.ipynb`](notebooks/Paper4_Final_Free_GPU_Execution.ipynb) from the branch containing this change. Enable a CUDA GPU, run the cells, and authorize Drive mounting. The notebook freezes code/model revisions, preserves run files in Drive, and exports a results ZIP. Keep `EVAL_MAX=None` for full validation inference. Free-GPU runtime completion is not guaranteed.
 
-Use the final notebook:
+The extended workflow adds a 38-configuration matched inference matrix, separate calibration, frozen-policy corruption evaluation, target-risk sensitivity, paired accuracy statistics, CSV tables and 600-dpi risk-coverage figures. It stops on errors and resumes from validated predictions. CPU tests have passed; GPU benchmarks have **not** been executed in the authoring environment.
 
-**[`notebooks/Paper4_Final_Free_GPU_Execution.ipynb`](notebooks/Paper4_Final_Free_GPU_Execution.ipynb)**
-
-In Google Colab or Kaggle:
-
-1. Enable a CUDA GPU.
-2. Open the notebook.
-3. Keep `EVAL_MAX=None` for the real evaluation run.
-4. Run all cells from top to bottom.
-5. Preserve the generated `results/` artifacts.
-6. Push the real results back to this repository before manuscript population.
-
-The notebook automatically performs:
-
-- environment and CUDA audit
-- unit/leakage tests
-- official A-OKVQA annotation preparation
-- COCO validation-image setup
-- fixed A-OKVQA training calibration subset using seed 2026
-- selective download of calibration images
-- B3 calibration inference
-- validation-only Platt calibration and 5% target-risk selection
-- matched B0/B1/B2/B3 execution on untouched A-OKVQA validation data
-- B4 calibrated evaluation
-- B5 selective evaluation
-- automatic generation of `results/metrics/aokvqa_B0_B5_summary.json`
+See [the execution guide](docs/AUTOMATED_STUDY.md) for commands, evaluation definitions, output locations, remaining scientific requirements and limitations. This workflow covers A-OKVQA. Official OK-VQA results, external baselines and additional paper requirements remain outstanding.
 
 ## Matched experimental progression
 

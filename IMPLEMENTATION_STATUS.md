@@ -1,3 +1,7 @@
+## September 11 execution update
+
+A resumable A-OKVQA study runner and persistent Colab workflow are implemented. CPU regression and fixture-based postprocessing checks pass; GPU inference and live APIs are unverified. No scientific results were generated. See `docs/AUTOMATED_STUDY.md` for exact scope and outstanding requirements. Historical implementation notes below do not constitute benchmark evidence.
+
 # IMPLEMENTATION STATUS — 2026-09-09
 
 ## COMPLETED

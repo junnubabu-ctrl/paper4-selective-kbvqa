@@ -30,7 +30,7 @@ def main():
             "brier":cal.get("brier"),
             "aurc":cal.get("aurc"),
             "coverage":sel.get("coverage",1.0 if name!="B5" else None),
-            "risk":sel.get("risk"),
+            "risk":sel.get("selective_risk"),
             "selective_soft_accuracy":sel.get("soft_accuracy_percent"),
         })
         payload[name]=row

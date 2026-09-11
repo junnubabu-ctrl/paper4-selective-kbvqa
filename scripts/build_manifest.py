@@ -21,7 +21,8 @@ def aokvqa(args):
             "image_path":str(image_path),
             "question":x["question"],
             "answers":x.get("direct_answers",[]),
-            "metadata":{"dataset":"aokvqa","split":args.split,"image_id":x["image_id"]},
+            "metadata":{"dataset":"aokvqa","split":args.split,"image_id":x["image_id"],
+                        "difficult_direct_answer":x["difficult_direct_answer"]},
         })
     write_jsonl(args.out,rows)
 

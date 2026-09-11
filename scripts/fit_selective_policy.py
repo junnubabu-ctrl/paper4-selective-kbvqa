@@ -26,8 +26,11 @@ def main():
     ap.add_argument("--manifest",required=True); ap.add_argument("--predictions",required=True); ap.add_argument("--out",required=True); ap.add_argument("--target-risk",type=float,default=.05)
     args=ap.parse_args()
     manifest=load_jsonl(args.manifest); preds=load_predictions(args.predictions)
+    from paper4_kbvqa.execution.study import validate_predictions
+    validate_predictions(args.manifest,args.predictions)
     scores=[]; correct=[]; used=[]
     for s in manifest:
+        if s.metadata.get("difficult_direct_answer",False): continue
         p=preds.get(s.question_id)
         if p is None or not s.answers: continue
         # Full-credit event: prediction receives maximal A-OKVQA/VQA-style agreement credit.

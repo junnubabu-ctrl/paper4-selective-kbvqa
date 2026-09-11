@@ -54,6 +54,8 @@ def evaluate_rows(manifest_path: str, prediction_path: str, *, dataset: str, con
     missing = []
 
     for s in samples:
+        if dataset == "aokvqa" and s.metadata.get("difficult_direct_answer", False):
+            continue
         if not s.answers:
             continue
         p = preds.get(s.question_id)
@@ -133,7 +135,8 @@ def main() -> None:
     )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, indent=2, allow_nan=True), encoding="utf-8")
+    from paper4_kbvqa.execution.study import write_json
+    write_json(out, payload)
     summary = {k: v for k, v in payload.items() if k != "per_question"}
     print(json.dumps(summary, indent=2, allow_nan=True))
 

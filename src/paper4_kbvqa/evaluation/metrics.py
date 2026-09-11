@@ -29,4 +29,5 @@ def risk_coverage_curve(confidence, correct):
 def aurc(confidence, correct):
     coverage,risk=risk_coverage_curve(confidence,correct)
     if len(coverage)<2: return float(risk[0]) if len(risk) else float('nan')
-    return float(np.trapezoid(risk,coverage))
+    integrate=np.trapezoid if hasattr(np,'trapezoid') else np.trapz
+    return float(integrate(risk,coverage))

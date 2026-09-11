@@ -95,8 +95,10 @@ class QwenLabelLikelihoodCritic:
         device_map: str = "auto",
         load_in_4bit: bool = True,
         prompt_version: str = "evitrust-critic-v1",
+        revision: str = "main",
     ):
         self.model_id = model_id
+        self.revision = revision
         self.device_map = device_map
         self.load_in_4bit = bool(load_in_4bit)
         self.prompt_version = prompt_version
@@ -122,11 +124,12 @@ class QwenLabelLikelihoodCritic:
             except Exception:
                 quantization_config = None
 
-        self._tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=False)
+        self._tokenizer = AutoTokenizer.from_pretrained(self.model_id, revision=self.revision, trust_remote_code=False)
         kwargs = {
             "device_map": self.device_map,
             "torch_dtype": "auto",
             "trust_remote_code": False,
+            "revision": self.revision,
         }
         if quantization_config is not None:
             kwargs["quantization_config"] = quantization_config

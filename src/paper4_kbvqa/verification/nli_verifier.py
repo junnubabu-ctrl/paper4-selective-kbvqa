@@ -28,9 +28,11 @@ class DeBERTaNLIVerifier:
         model_id: str = "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
         *,
         device: str | None = None,
+        revision: str = "main",
     ):
         self.model_id = model_id
         self.device = device
+        self.revision = revision
         self._pipe = None
 
     def _load(self):
@@ -38,7 +40,7 @@ class DeBERTaNLIVerifier:
             return
         from transformers import pipeline
 
-        kwargs = {"model": self.model_id}
+        kwargs = {"model": self.model_id, "revision": self.revision}
         if self.device is not None:
             kwargs["device"] = self.device
         self._pipe = pipeline("text-classification", **kwargs)
@@ -101,6 +103,8 @@ class DeBERTaNLIVerifier:
             "CONTRADICTED": probs["contradiction"],
             "INSUFFICIENT": probs["neutral"],
         }
+        if not .99 <= sum(values.values()) <= 1.01:
+            raise RuntimeError('NLI output label mapping is unsupported; inspect checkpoint id2label')
         label = max(values, key=values.get)
         return NLIVerificationResult(
             supported=values["SUPPORTED"],

@@ -17,9 +17,10 @@ dependencies = [
 [project.optional-dependencies]
 vlm = [
   "torch>=2.2",
-  "transformers>=4.50",
+  "transformers>=4.50,<5",
   "accelerate>=1.0",
   "pillow>=10.0",
+  "sentencepiece>=0.2",
   "bitsandbytes>=0.43; platform_system == 'Linux'",
 ]
 retrieval = [
@@ -28,6 +29,7 @@ retrieval = [
   "requests>=2.31",
 ]
 dev = ["pytest>=8", "ruff>=0.6"]
+analysis = ["matplotlib>=3.8", "scipy>=1.11"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

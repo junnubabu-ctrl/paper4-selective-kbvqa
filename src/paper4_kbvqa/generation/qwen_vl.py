@@ -66,7 +66,8 @@ class Qwen25VLGenerator(AnswerGenerator):
                     return ans, ids
             except Exception:
                 pass
-        return text.strip(), fallback_ids
+        # Parse failure must not manufacture citations for every supplied item.
+        return text.strip(), []
 
     def extract_visual_entities(self, image_path: str, question: str, max_entities: int = 8) -> list[str]:
         if not self._loaded:
