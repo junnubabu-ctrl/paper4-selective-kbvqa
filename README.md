@@ -39,6 +39,8 @@ No benchmark result is claimed until produced by an executed experiment. Synthet
 
 ## One-click execution path
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/junnubabu-ctrl/paper4-selective-kbvqa/blob/main/notebooks/Paper4_Final_Free_GPU_Execution.ipynb)
+
 Use the final notebook:
 
 **[`notebooks/Paper4_Final_Free_GPU_Execution.ipynb`](notebooks/Paper4_Final_Free_GPU_Execution.ipynb)**
