@@ -11,7 +11,7 @@ ROOT=Path(__file__).resolve().parents[1]; sys.path.insert(0,str(ROOT/'src'))
 import numpy as np
 from scipy.stats import binomtest
 from paper4_kbvqa.execution.study import write_json, read_rows
-from paper4_kbvqa.evaluation.statistics import paired_bootstrap_accuracy, mcnemar_counts
+from paper4_kbvqa.evaluation.statistics import paired_bootstrap_accuracy, mcnemar_counts, paired_cluster_swap_test
 from paper4_kbvqa.evaluation.metrics import risk_coverage_curve
 
 
@@ -20,6 +20,16 @@ def aligned(a,b):
     if set(a)!=set(b): raise ValueError('Paired statistics require identical question IDs')
     keys=sorted(a)
     return [a[k] for k in keys],[b[k] for k in keys]
+
+
+def aligned_image_groups(a,b):
+    groups=[]
+    for x,y in zip(a,b):
+        group=x.get('image_group')
+        if not group or group!=y.get('image_group'):
+            raise ValueError('Matching image groups required; regenerate legacy metrics from manifests')
+        groups.append(group)
+    return groups
 
 
 def holm(pvalues):
@@ -47,23 +57,28 @@ def main():
     tests=[]
     for av,bv in pairs:
         a,b=aligned(metrics[args.dataset+'_val_'+av],metrics[args.dataset+'_val_'+bv])
-        diff=paired_bootstrap_accuracy([x['soft_score'] for x in a],[x['soft_score'] for x in b],n_boot=2000,seed=2026)
+        groups=aligned_image_groups(a,b)
+        diff=paired_bootstrap_accuracy([x['soft_score'] for x in a],[x['soft_score'] for x in b],n_boot=2000,seed=2026,groups=groups)
+        swap=paired_cluster_swap_test([x['soft_score'] for x in a],[x['soft_score'] for x in b],groups)
         counts=mcnemar_counts([x['correct_full_credit'] for x in a],[x['correct_full_credit'] for x in b])
         discordant=sum(counts.values())
-        pv=float(binomtest(counts['a_correct_b_wrong'],discordant,.5).pvalue) if discordant else 1.0
+        iid_pv=(float(binomtest(counts['a_correct_b_wrong'],discordant,.5).pvalue) if discordant else 1.0) if len(set(groups))==len(groups) else None
         tests.append({'a':av,'b':bv,'soft_accuracy_difference_fraction':diff,
-                      'mcnemar_full_credit':counts,'p_value_exact':pv})
-    for row,pv in zip(tests,holm([x['p_value_exact'] for x in tests])): row['p_value_holm']=pv
+                      'mcnemar_full_credit':counts,'mcnemar_p_value_iid_only':iid_pv,
+                      'cluster_swap':swap,'p_value':swap['p_value']})
+    for row,pv in zip(tests,holm([x['p_value'] for x in tests])): row['p_value_holm']=pv
     from paper4_kbvqa.evaluation.statistics import paired_selective_bootstrap
     selective_intervals=[]
     for baseline in ['B0_selective','B1_selective']:
         if baseline not in metrics: continue
         a_metric=metrics[args.dataset+'_val_B5']; b_metric=metrics[baseline]
         a,b=aligned(a_metric,b_metric)
+        groups=aligned_image_groups(a,b)
         ci=paired_selective_bootstrap([x['confidence'] for x in a],[x['correct_full_credit'] for x in a],a_metric['threshold'],
-            [x['confidence'] for x in b],[x['correct_full_credit'] for x in b],b_metric['threshold'])
+            [x['confidence'] for x in b],[x['correct_full_credit'] for x in b],b_metric['threshold'],groups=groups)
         selective_intervals.append({'a':'B5','b':baseline,'intervals':ci,
-            'interpretation':'Pointwise percentile intervals; no simultaneous-coverage claim. Undefined zero-coverage draws are counted.'})
+            'resampling_unit':'image','n_image_groups':len(set(groups)),
+            'interpretation':'Pointwise image-block percentile intervals conditional on frozen predictions and policies; no simultaneous-coverage claim. Undefined zero-coverage draws are counted.'})
     efficiency={}; support={}
     for path in sorted((root/'predictions').glob('*.jsonl')):
         if path.name.endswith('.sessions.jsonl') or path.name.endswith('_calibrated.jsonl') or path.stem in {args.dataset+'_val_B4',args.dataset+'_val_B5'}: continue
@@ -93,9 +108,10 @@ def main():
         ax.plot(coverage,risk,label=v)
     ax.set(xlabel='Coverage',ylabel='Full-credit error rate',xlim=(0,1),ylim=(0,1)); ax.legend(); fig.tight_layout()
     fig.savefig(out/'risk_coverage.png',dpi=600); fig.savefig(out/'risk_coverage.pdf'); plt.close(fig)
-    report={'statistics':tests,'selective_intervals':selective_intervals,'bootstrap_replicates':2000,'seed':2026,'efficiency':efficiency,'evidence_diagnostics':support,
+    report={'statistics':tests,'selective_intervals':selective_intervals,'bootstrap_replicates':2000,'resampling_unit':'image','cluster_swap_max_monte_carlo_assignments':19999,'seed':2026,'efficiency':efficiency,'evidence_diagnostics':support,
             'scope':args.dataset+'; observed results only',
             'limitations':['Calibration target risk is empirical, not a certified risk bound.',
+                          'Image blocks are assumed independent; label-swap p values require within-image system exchangeability. Intervals condition on fitted policies and fixed predictions.',
                           'Corruption injections are controlled perturbations, not natural contradiction labels.',
                           'Independent evidence support, external baselines and scientific review remain necessary.']}
     write_json(out/'study_report.json',report)

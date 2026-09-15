@@ -76,6 +76,7 @@ def evaluate_rows(manifest_path: str, prediction_path: str, *, dataset: str, con
         confidence = p.get(confidence_field)
         per_question.append({
             "question_id": s.question_id,
+            "image_group": 'image:'+str(s.metadata['image_id']) if s.metadata.get('image_id') is not None else 'path:'+s.image_path,
             "answer": answer,
             "soft_score": float(soft),
             "correct_full_credit": int(soft >= 1.0),

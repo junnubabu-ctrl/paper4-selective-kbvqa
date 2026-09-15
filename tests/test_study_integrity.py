@@ -134,6 +134,8 @@ def test_cpu_postprocessing_end_to_end(tmp_path,dataset):
     call('report_study.py','--results',tmp_path,'--dataset',dataset)
     report=json.loads((tmp_path/'report/study_report.json').read_text())
     assert len(report['statistics'])==4
+    assert report['resampling_unit']=='image'
+    assert all(x['soft_accuracy_difference_fraction']['n_clusters']==8 for x in report['statistics'])
     assert (tmp_path/'report/risk_coverage.png').stat().st_size>0
     assert all(x['p_value_holm']==1 for x in report['statistics'])
     # A calibrator cannot be applied to its own labelled fitting IDs as held-out data.

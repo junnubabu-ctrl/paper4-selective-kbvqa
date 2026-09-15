@@ -10,9 +10,11 @@ Base: ec63986f30aa48c8ad7322328497447695b43da7 on fix/calibration-jsonl-20260911
 4. Real Qwen generation records now include a SHA256 prediction identity over image bytes, question, exact ordered evidence payload, rendered prompt, model configuration and requested/resolved revision, processor configuration, decoding settings, quantization, image budget and torch initial seed. Resume additionally rejects changed questions, image bytes or supplied visual entities. This does not justify reusing a prediction after changing evidence. Outer run identities and frozen artifacts remain required.
 5. Rejecting every question now reports undefined selective risk as null, not zero.
 
+6. Evaluation now retains image identity. Answer and selective intervals resample whole image groups. Four paired answer-score comparisons use image-block label swaps with Holm adjustment, exact for at most 16 groups and otherwise 19,999 seeded Monte Carlo assignments with a plus-one p value. McNemar counts remain diagnostic; its iid p value is omitted for repeated images. These procedures condition on frozen predictions/policies and assume independent image groups; label-swap inference additionally assumes exchangeability of system labels within each image. Legacy metric files must be regenerated from manifests to recover image groups.
+
 ## Verification
 
-62 CPU software tests pass on Python 3.12.14, including image-group separation, empty-coverage semantics, malformed-citation handling, changed-input resume rejection, and both datasets' synthetic postprocessing. These fixtures are software checks, not benchmark findings. CI has not been independently revalidated for this revision. Real model inference was not executed in this environment (no CUDA GPU and no installed torch).
+71 CPU software tests pass on Python 3.12.14, including image-group separation, empty-coverage semantics, malformed-citation handling, changed-input resume rejection, image-block resampling and label-swap inference, and both datasets' synthetic postprocessing. These fixtures are software checks, not benchmark findings. CI has not been independently revalidated for this revision. Real model inference was not executed in this environment (no CUDA GPU and no installed torch).
 
 ## Scientific gates still open
 
@@ -21,7 +23,7 @@ Base: ec63986f30aa48c8ad7322328497447695b43da7 on fix/calibration-jsonl-20260911
 - Independently annotate evidence support, contradiction and sufficiency. The Qwen critic shares a model family with the generator and is not independent ground truth.
 - Complete capacity/budget-matched external verification/selective baselines. Heuristic provenance weights are not learned truth estimates.
 - Realistically validate corruption semantics. Synthetic negation alone does not establish realistic misinformation robustness.
-- Complete image-cluster inference, multiplicity control, transfer analysis and cost reporting from real outputs.
+- Execute the implemented image-cluster inference and multiplicity controls on real outputs; complete transfer analysis and cost reporting.
 - Finish final-version reference reconciliation, close-work novelty review, institutional conditions, author declarations and approvals.
 
 The manuscript is a research draft. No benchmark number or submission-ready status is asserted by this audit.

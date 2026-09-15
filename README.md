@@ -26,7 +26,7 @@ No benchmark result is claimed until produced by an executed experiment. Synthet
 - Platt, isotonic, and temperature calibration utilities
 - validation-only target-risk threshold selection
 - coverage, selective accuracy/risk, ECE, Brier, and AURC utilities
-- paired bootstrap and McNemar utilities
+- paired image-block bootstrap, cluster label-swap tests with Holm adjustment, and diagnostic McNemar counts
 - official-formula A-OKVQA direct-answer evaluation
 - **clean matched B0-B3 runner**
 - B4/B5 calibration and selective-policy workflow
