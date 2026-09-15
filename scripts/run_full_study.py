@@ -149,12 +149,18 @@ class Study:
         train=read_rows(man/'train.jsonl'); val=read_rows(man/'val.jsonl')
         random.Random(self.args.seed).shuffle(train)
         if len(train)<self.args.cal_n: raise ValueError('Insufficient calibration samples')
-        cal_rows=train[:self.args.cal_n]
+        from paper4_kbvqa.data.partitions import image_group
+        # Development images cannot also fit calibration or select a threshold.
+        dev_rows=train[:50]
+        dev_groups={image_group(x) for x in dev_rows}
+        pool=[x for x in train if image_group(x) not in dev_groups]
+        if len(pool)<self.args.cal_n: raise ValueError('Insufficient calibration data after excluding development images')
+        cal_rows=pool[:self.args.cal_n]
         if self.args.eval_max: val=val[:self.args.eval_max]
         if {x['question_id'] for x in cal_rows}&{x['question_id'] for x in val}: raise ValueError('Split leakage')
         if {x['metadata']['image_id'] for x in cal_rows}&{x['metadata']['image_id'] for x in val}: raise ValueError('Image leakage')
         cal=man/'calibration.jsonl'; evaluation=man/'evaluation.jsonl'; dev=man/'development.jsonl'
-        for path,rows in [(cal,cal_rows),(evaluation,val),(dev,cal_rows[:50])]:
+        for path,rows in [(cal,cal_rows),(evaluation,val),(dev,dev_rows)]:
             content=''.join(json.dumps(x)+'\n' for x in rows)
             if path.exists() and path.read_text()!=content: raise ValueError('Frozen manifest changed')
             path.write_text(content)
@@ -162,9 +168,10 @@ class Study:
             'evaluation_split':'val' if self.dataset=='aokvqa' else 'test (COCO val2014)','calibration_n':len(cal_rows),'evaluation_n':len(val),
             'development':self.args.eval_max is not None,'seed':self.args.seed})
         # Downloads validate every image; do not skip just because a directory exists.
+        self.command('images_dev','download_coco_images.py','--manifest',dev,'--out-dir',coco,'--split','train2017' if self.dataset=='aokvqa' else 'train2014')
         self.command('images_cal','download_coco_images.py','--manifest',cal,'--out-dir',coco,'--split','train2017' if self.dataset=='aokvqa' else 'train2014')
         self.command('images_eval','download_coco_images.py','--manifest',evaluation,'--out-dir',coco,'--split','val2017' if self.dataset=='aokvqa' else 'val2014')
-        for rows in [cal_rows,val]:
+        for rows in [dev_rows,cal_rows,val]:
             from PIL import Image
             for row in rows:
                 with Image.open(row['image_path']) as image: image.verify()

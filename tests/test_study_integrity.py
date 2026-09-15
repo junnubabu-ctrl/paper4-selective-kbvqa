@@ -99,7 +99,7 @@ def test_cpu_postprocessing_end_to_end(tmp_path,dataset):
     """Synthetic fixture validates plumbing only; all files remain in tmp_path."""
     cal=tmp_path/'cal.jsonl'; val=tmp_path/'val.jsonl'; cp=tmp_path/'cal_pred.jsonl'
     def samples(prefix):
-        return [{'question_id':f'{prefix}{i}','image_path':'x','question':'?',
+        return [{'question_id':f'{prefix}{i}','image_path':f'{prefix}{i}.jpg','question':'?',
                  'answers':['cat']*10,'metadata':{'difficult_direct_answer':False,'official_annotation':{
                      'question_type':'other','answer_type':'other','question_id':f'{prefix}{i}',
                      'answers':[{'answer':'cat','answer_id':j} for j in range(10)]}}} for i in range(8)]
@@ -114,6 +114,9 @@ def test_cpu_postprocessing_end_to_end(tmp_path,dataset):
         subprocess.run([sys.executable,str(ROOT/'scripts'/script),*map(str,args)],check=True,capture_output=True,text=True)
     policy=tmp_path/'policies/p.json'
     call('fit_selective_policy.py','--manifest',cal,'--predictions',cp,'--dataset',dataset,'--out',policy)
+    fitted=json.loads(policy.read_text())
+    assert set(fitted['fit_question_ids']).isdisjoint(fitted['threshold_question_ids'])
+    assert fitted['n_fit'] + fitted['n_threshold'] == fitted['n_validation']
     for v in ['B0','B1','B2','B3']:
         pred=tmp_path/f'predictions/{dataset}_val_{v}.jsonl'; write(pred,preds('v'))
         call('evaluate.py','--manifest',val,'--predictions',pred,'--dataset',dataset,'--out',tmp_path/f'metrics/{dataset}_val_{v}.json')

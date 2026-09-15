@@ -1,6 +1,8 @@
 from __future__ import annotations
 import json
 import math
+import hashlib
+from pathlib import Path
 import re
 from paper4_kbvqa.generation.base import AnswerGenerator, build_prompt_payload
 from paper4_kbvqa.types import Evidence
@@ -145,4 +147,14 @@ class Qwen25VLGenerator(AnswerGenerator):
         answer, support_ids=self._parse_output(decoded, fallback_ids)
         allowed=set(fallback_ids)
         support_ids=[x for x in support_ids if x in allowed] if self.include_evidence_ids else []
-        return {"answer":answer,"raw_confidence":raw_conf,"supporting_evidence_ids":support_ids,"raw_text":decoded}
+        identity={"image_sha256":hashlib.sha256(Path(image_path).read_bytes()).hexdigest(),
+            "question":question,"ordered_evidence":payload['evidence'],"rendered_prompt":text,
+            "model_id":self.model_name,"requested_revision":self.revision,
+            "resolved_revision":getattr(self.model.config,"_commit_hash",None),
+            "model_config":self.model.config.to_dict(),
+            "processor_config":self.processor.image_processor.to_dict(),
+            "decoding":{"max_new_tokens":48,"do_sample":False},
+            "seed":int(torch.initial_seed()),"four_bit":self.load_in_4bit,"max_pixels":self.max_pixels}
+        key=hashlib.sha256(json.dumps(identity,sort_keys=True,default=str,ensure_ascii=False).encode()).hexdigest()
+        return {"answer":answer,"raw_confidence":raw_conf,"supporting_evidence_ids":support_ids,
+                "raw_text":decoded,"prediction_key":key,"generation_identity":identity}

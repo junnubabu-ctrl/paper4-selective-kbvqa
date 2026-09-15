@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 import json
+import hashlib
 import os
 import time
 from typing import Sequence
@@ -208,7 +209,14 @@ class MatchedVariantRunner:
                 ),
             }
 
+        image=Path(sample.image_path)
+        input_identity={"question":sample.question,"image_path":sample.image_path,
+            "image_sha256":hashlib.sha256(image.read_bytes()).hexdigest() if image.is_file() else None,
+            "visual_entities":list(sample.visual_entities)}
         rec = {
+            "input_identity":input_identity,
+            "prediction_key":self._field(generated,"prediction_key",default=None),
+            "generation_identity":self._field(generated,"generation_identity",default=None),
             "variant": self.variant,
             "question_id": str(sample.question_id),
             "question": sample.question,
@@ -253,7 +261,8 @@ class MatchedVariantRunner:
         errors: list[dict] = []
         # Predictions are authoritative: a crash can occur between the durable
         # prediction write and the checkpoint update. Never duplicate that row.
-        expected = {str(s.question_id) for s in samples}
+        sample_by_id = {str(s.question_id): s for s in samples}
+        expected = set(sample_by_id)
         if len(expected) != len(samples):
             raise ValueError("Duplicate manifest question IDs")
         if output_jsonl.exists():
@@ -274,6 +283,13 @@ class MatchedVariantRunner:
                     checksum = rec.pop("record_sha256", None)
                     if rec.get("variant") != self.variant or checksum != record_checksum(rec):
                         raise ValueError("Prediction checksum/variant mismatch: " + qid)
+                    sample=sample_by_id[qid]
+                    image=Path(sample.image_path)
+                    expected_input={"question":sample.question,"image_path":sample.image_path,
+                        "image_sha256":hashlib.sha256(image.read_bytes()).hexdigest() if image.is_file() else None,
+                        "visual_entities":list(sample.visual_entities)}
+                    if rec.get("input_identity") != expected_input:
+                        raise ValueError("Prediction input changed or legacy identity missing: "+qid)
                     completed.add(qid)
 
         with output_jsonl.open("a", encoding="utf-8") as out:

@@ -18,9 +18,9 @@ def choose_threshold_for_target_risk(confidences, correct, target_risk: float=0.
     feasible=[]
     for t in candidates:
         m=c>=t; cov=float(m.mean())
-        if not m.any(): risk=0.0
-        else: risk=float((~y[m]).mean())
+        if not m.any(): continue
+        risk=float((~y[m]).mean())
         if risk<=target_risk: feasible.append((cov,-float(t),float(t),risk))
-    if not feasible: return {"threshold":reject_all,"coverage":0.0,"risk":0.0}
+    if not feasible: return {"threshold":reject_all,"coverage":0.0,"risk":None}
     cov,_,t,risk=max(feasible)
     return {"threshold":t,"coverage":cov,"risk":risk}

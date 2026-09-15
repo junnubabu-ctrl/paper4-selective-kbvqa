@@ -4,7 +4,7 @@ Implementation-first PhD research repository for:
 
 **EviTrust-VQA: Provenance-Calibrated Evidence Verification and Selective Answering for Knowledge-Based Visual Question Answering**
 
-The experimentally defensible novelty target is: **source-traceable multi-source evidence, relevance filtering, explicit support/contradiction/insufficiency verification, provenance-aware reliability fusion, validation-only confidence calibration, and risk-controlled selective answering under noisy external knowledge**.
+The experimentally defensible novelty target is: **source-traceable multi-source evidence, relevance filtering, explicit support/contradiction/insufficiency verification, provenance-aware reliability fusion, validation-only confidence calibration, and empirically thresholded selective answering under noisy external knowledge**.
 
 ## Scientific status
 
@@ -107,7 +107,7 @@ After the main result gate, run the prespecified verifier, source, top-k, rerank
 ## Integrity rules
 
 - Ground-truth answers never enter retrieval queries, generation prompts, evidence ranking, or verification.
-- Calibration and operating-threshold selection use separate calibration data only.
+- Development images are excluded from calibration. Platt fitting and empirical threshold selection use disjoint image groups within calibration; held-out evaluation remains separate. The 5% target is not a population risk guarantee.
 - Held-out evaluation data are never used to tune weights, prompts, top-k, or thresholds.
 - Synthetic smoke metrics are never reported as benchmark results.
 - Do not fabricate accuracy, p-values, confidence intervals, runtime, VRAM, baselines, or ablations.
@@ -119,3 +119,7 @@ After the main result gate, run the prespecified verifier, source, top-k, rerank
 The default path uses PyTorch, Hugging Face Transformers, public knowledge resources, and open models. No paid OpenAI, Anthropic, Gemini, commercial vector database, or paid inference endpoint is required.
 
 See `REPRODUCIBILITY.md`, `EXPERIMENT_PLAN.md`, `docs/novelty_audit.md`, and `IMPLEMENTATION_STATUS.md` before promoting any number into the manuscript.
+
+## Integrity audit 15 September 2026
+
+See [the scientific audit](docs/SCIENTIFIC_AUDIT_20260915.md) for corrected partitioning, exact generation identities, regression checks, and outstanding experimental gates. GPU findings remain pending.
