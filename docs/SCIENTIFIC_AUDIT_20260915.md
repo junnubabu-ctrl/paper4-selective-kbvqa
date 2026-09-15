@@ -25,3 +25,7 @@ Base: ec63986f30aa48c8ad7322328497447695b43da7 on fix/calibration-jsonl-20260911
 - Finish final-version reference reconciliation, close-work novelty review, institutional conditions, author declarations and approvals.
 
 The manuscript is a research draft. No benchmark number or submission-ready status is asserted by this audit.
+
+## Checkpoint freeze
+
+`configs/models_20260915.json` records exact upstream checkpoint revisions queried on 15 September 2026. The automatic study uses these pins and rejects an incompatible existing model lock. Qwen2.5-VL-3B carries the Qwen Research License Agreement, not Apache 2.0; the 1.5B critic and MiniLM reranker use Apache 2.0, and the DeBERTa model card states MIT. Model use and any redistribution remain subject to those upstream terms. No weights were downloaded or redistributed in this audit.

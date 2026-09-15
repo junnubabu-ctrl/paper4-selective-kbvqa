@@ -1,0 +1,31 @@
+{
+  "generator": {
+    "model_id": "Qwen/Qwen2.5-VL-3B-Instruct",
+    "revision": "66285546d2b821cf421d4f5eb2576359d3770cd3",
+    "license": "Qwen Research License Agreement (non-commercial research/evaluation)",
+    "checked": "2026-09-15",
+    "url": "https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct",
+    "license_url": "https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct/blob/66285546d2b821cf421d4f5eb2576359d3770cd3/LICENSE"
+  },
+  "qwen": {
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "license": "apache-2.0",
+    "checked": "2026-09-15",
+    "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct"
+  },
+  "deberta": {
+    "model_id": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+    "revision": "6f5cf0a2b59cabb106aca4c287eed12e357e90eb",
+    "license": "mit",
+    "checked": "2026-09-15",
+    "url": "https://huggingface.co/MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
+  },
+  "reranker": {
+    "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+    "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "license": "apache-2.0",
+    "checked": "2026-09-15",
+    "url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2"
+  }
+}

@@ -124,11 +124,9 @@ class Study:
                   'git_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()}
         freeze_json(self.out/'study_identity.json',identity)
         lock=self.out/'model_revisions.json'
-        if lock.exists(): self.model_lock=json.loads(lock.read_text())
-        else:
-            from huggingface_hub import HfApi
-            self.model_lock={k:{'model_id':v,'revision':HfApi().model_info(v).sha} for k,v in MODELS.items()}
-            write_json(lock,self.model_lock)
+        model_manifest=json.loads((ROOT/'configs/models_20260915.json').read_text())
+        self.model_lock={k:{'model_id':v['model_id'],'revision':v['revision']} for k,v in model_manifest.items()}
+        freeze_json(lock,self.model_lock)
         (self.out/'requirements-resolved.txt').write_text(subprocess.check_output([sys.executable,'-m','pip','freeze'],text=True))
         data=self.out/'datasets'; annotations=data/self.dataset; coco=data/'coco'; man=self.out/'manifests'
         man.mkdir(exist_ok=True)
