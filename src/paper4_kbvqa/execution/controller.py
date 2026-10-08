@@ -77,21 +77,22 @@ def leakage_safe_query(
 
 
 def provenance_score(evidence: Sequence[Evidence], cited_ids: Sequence[str]) -> float:
-    """Backward-compatible citation-validity score."""
+    """Distinct raw identifier validity; repeated valid IDs cannot inflate it."""
     if not cited_ids:
         return 0.0
     available = {str(ev.evidence_id) for ev in evidence}
-    valid = sum(1 for x in cited_ids if str(x) in available)
-    return valid / max(1, len(cited_ids))
+    distinct = set(str(x) for x in cited_ids)
+    valid = len(distinct & available)
+    return valid / max(1, len(distinct))
 
 
 def provenance_components(
     evidence: Sequence[Evidence],
     cited_ids: Sequence[str],
 ) -> dict[str, float]:
-    """Audit citation validity, URI/source traceability, and source diversity."""
+    """Traceability and relative source coverage do not establish factual truth."""
     by_id = {str(ev.evidence_id): ev for ev in evidence}
-    cited = [str(x) for x in cited_ids]
+    cited = sorted(set(str(x) for x in cited_ids))
     valid_items = [by_id[x] for x in cited if x in by_id]
     validity = provenance_score(evidence, cited)
 
@@ -124,6 +125,7 @@ def provenance_components(
         "citation_validity": float(validity),
         "source_traceability": float(traceable),
         "source_diversity": float(diversity),
+        "relative_cited_source_coverage": float(diversity),
         "composite": float(max(0.0, min(1.0, composite))),
     }
 

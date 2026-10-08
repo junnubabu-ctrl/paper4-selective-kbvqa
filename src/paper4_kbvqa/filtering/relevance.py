@@ -13,7 +13,11 @@ def _jaccard(a: str,b: str) -> float:
 
 def _cos(a: str,b: str) -> float:
     if not a.strip() or not b.strip(): return 0.0
-    v=TfidfVectorizer(stop_words="english").fit_transform([a,b])
+    try:
+        v=TfidfVectorizer(stop_words="english").fit_transform([a,b])
+    except ValueError as error:
+        if 'empty vocabulary' in str(error): return 0.0
+        raise
     return float(cosine_similarity(v[0],v[1])[0,0])
 
 @dataclass(frozen=True)

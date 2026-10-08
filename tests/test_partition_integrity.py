@@ -22,7 +22,7 @@ def test_reject_all_has_undefined_risk_even_at_confidence_one():
 
 
 def test_unstructured_answer_does_not_invent_citations():
-    assert Qwen25VLGenerator._parse_output('cat',['e1','e2'])==('cat',[])
+    assert Qwen25VLGenerator._parse_output('cat',['e1','e2'])==('',[])
 
 @pytest.mark.parametrize('change',['question','image'])
 def test_resume_rejects_changed_input(tmp_path,change):

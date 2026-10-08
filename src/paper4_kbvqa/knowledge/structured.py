@@ -8,6 +8,8 @@ class StructuredKnowledgeProvider:
     def __init__(self,providers): self.providers=list(providers)
 
     def retrieve_for_question(self,question,visual_entities,limit=10):
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError('Global retrieval limit must be a positive integer')
         # ConceptNet concept URIs and Wikidata entity search do not accept a full
         # visual question as an entity identifier. Prefer model-extracted entities.
         terms=[str(x).strip() for x in visual_entities if str(x).strip()]
@@ -22,4 +24,4 @@ class StructuredKnowledgeProvider:
                 for evidence in provider.retrieve(query.strip(),limit=limit):
                     if evidence.evidence_id not in seen:
                         seen.add(evidence.evidence_id); pooled.append(evidence)
-        return sorted(pooled,key=lambda e:e.retrieval_score,reverse=True)
+        return sorted(pooled,key=lambda e:(-float(e.retrieval_score),str(e.evidence_id)))[:limit]
