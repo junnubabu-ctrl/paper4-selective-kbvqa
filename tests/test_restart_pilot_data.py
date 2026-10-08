@@ -11,7 +11,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from paper4_kbvqa.data.restart_pilot import (
-    TRAIN_NAME, choose_pilot, download_atomic, freeze_bytes, json_bytes, load_pilot_manifest,
+    TRAIN_NAME, choose_pilot, download_atomic, freeze_bytes, image_urls, json_bytes, load_pilot_manifest,
     prepare_pilot, train_from_archive, validate_prepared_pilot, validate_train_annotations,
 )
 
@@ -194,6 +194,49 @@ class RestartPilotDataTests(unittest.TestCase):
             self.assertEqual(len([event for event in events if event["stage"] == "image_download_failed"]), 3)
             validated = validate_prepared_pilot(out, require_images=False)
             self.assertEqual(len(validated["rows"]), 50)
+
+    def test_same_bucket_https_routes_and_unknown_transport_rejection(self):
+        canonical, selected = image_urls(287900, "coco-s3-path")
+        self.assertEqual(canonical, "https://images.cocodataset.org/train2017/000000287900.jpg")
+        self.assertEqual(selected, "https://s3.amazonaws.com/images.cocodataset.org/train2017/000000287900.jpg")
+        self.assertEqual(image_urls(287900, "coco-host"), (canonical, canonical))
+        with self.assertRaisesRegex(ValueError, "Unknown image transport"):
+            image_urls(287900, "unverified-mirror")
+
+    def test_selected_route_ledger_retains_actual_origin_across_resume(self):
+        from PIL import Image
+        def declared_fixture_download(url, destination, timeout, cap, validator, response_metadata=None):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (11, 13), "red").save(destination)
+            validator(destination)
+            if response_metadata is not None:
+                response_metadata["resolved_url"] = url
+            return True
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / TRAIN_NAME
+            source.write_bytes(self.content)
+            out = Path(directory) / "pilot"
+            prepare_pilot(out, source, False, False, 5)
+            frozen_before = {name: (out / name).read_bytes() for name in
+                             ["source_manifest.json", "inference_manifest.jsonl", "offline_reference_manifest.jsonl"]}
+            with patch("paper4_kbvqa.data.restart_pilot.download_atomic", side_effect=declared_fixture_download) as downloader:
+                result = prepare_pilot(out, None, False, True, 5, image_transport="coco-s3-path")
+            self.assertEqual(result["verified_images"], 50)
+            self.assertEqual(downloader.call_count, 50)
+            ledger = json.loads((out / "image_inventory.json").read_text())
+            first = ledger["images"][0]
+            self.assertEqual(first["image_transport"], "coco-s3-path")
+            self.assertEqual(first["verified_download_transport"], "coco-s3-path")
+            self.assertEqual(first["verified_download_url"], first["selected_url"])
+            self.assertTrue(first["canonical_url"].startswith("https://images.cocodataset.org/train2017/"))
+            prepare_pilot(out, None, False, False, 5, image_transport="coco-host")
+            resumed = json.loads((out / "image_inventory.json").read_text())["images"][0]
+            self.assertEqual(resumed["image_transport"], "coco-host")
+            self.assertEqual(resumed["verified_download_transport"], "coco-s3-path")
+            self.assertEqual(resumed["verified_download_url"], first["verified_download_url"])
+            self.assertEqual(resumed["sha256"], first["sha256"])
+            self.assertEqual(frozen_before, {name: (out / name).read_bytes() for name in frozen_before})
+            self.assertEqual(len(validate_prepared_pilot(out)["rows"]), 50)
 
 
 if __name__ == "__main__":

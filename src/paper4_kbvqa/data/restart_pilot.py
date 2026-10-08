@@ -22,6 +22,17 @@ MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_ANNOTATION_BYTES = 64 * 1024 * 1024
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 INFERENCE_KEYS = frozenset({"question_id", "image_path", "question"})
+IMAGE_TRANSPORTS = ("coco-host", "coco-s3-path")
+
+
+def image_urls(image_id: int, transport: str) -> tuple[str, str]:
+    """Canonical COCO identity and explicitly selected HTTPS route to its same S3 bucket."""
+    if transport not in IMAGE_TRANSPORTS:
+        raise ValueError("Unknown image transport")
+    object_path = f"train2017/{image_id:012d}.jpg"
+    canonical = "https://images.cocodataset.org/" + object_path
+    selected = canonical if transport == "coco-host" else "https://s3.amazonaws.com/images.cocodataset.org/" + object_path
+    return canonical, selected
 
 
 def sha256_file(path: Path) -> str:
@@ -64,7 +75,8 @@ def freeze_bytes(path: Path, content: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def download_atomic(url: str, destination: Path, timeout: float, cap: int, validator=None) -> bool:
+def download_atomic(url: str, destination: Path, timeout: float, cap: int, validator=None,
+                    response_metadata: dict | None = None) -> bool:
     """Bounded stream, validate before publishing. Existing files must validate."""
     destination = Path(destination)
     if destination.exists():
@@ -83,6 +95,8 @@ def download_atomic(url: str, destination: Path, timeout: float, cap: int, valid
             fd = None
             if not response.geturl().startswith("https://"):
                 raise ValueError("Download redirected away from HTTPS")
+            if response_metadata is not None:
+                response_metadata.update(request_url=url, resolved_url=response.geturl())
             length = response.headers.get("Content-Length")
             if length and int(length) > cap:
                 raise ValueError("Download Content-Length exceeds byte cap")
@@ -293,9 +307,11 @@ def validate_prepared_pilot(pilot_dir: Path, require_images: bool = True) -> dic
 def prepare_pilot(out_dir: Path, annotations: Path | None, download_annotations: bool,
                   download_images: bool, timeout: float, archive_path: Path | None = None,
                   download_record: Path | None = None, max_consecutive_failures: int = 3,
-                  progress: Callable[[dict], None] | None = None) -> dict:
+                  progress: Callable[[dict], None] | None = None, image_transport: str = "coco-host") -> dict:
     if max_consecutive_failures < 1:
         raise ValueError("max_consecutive_failures must be positive")
+    if image_transport not in IMAGE_TRANSPORTS:
+        raise ValueError("Unknown image transport")
     out_dir = Path(out_dir).resolve()
     target = out_dir / "annotations" / TRAIN_NAME
     archive = out_dir / "annotations" / "aokvqa_v1p0.tar.gz"
@@ -388,30 +404,41 @@ def prepare_pilot(out_dir: Path, annotations: Path | None, download_annotations:
     network_attempts = 0
     for ordinal, (image_id, row) in enumerate(zip(image_ids, inference), 1):
         image_path = out_dir.joinpath(*PurePosixPath(row["image_path"]).parts)
-        url = f"https://images.cocodataset.org/train2017/{image_id:012d}.jpg"
+        canonical_url, url = image_urls(image_id, image_transport)
+        route = {"canonical_url": canonical_url, "url": url, "selected_url": url,
+                 "image_transport": image_transport, "coco_bucket": "images.cocodataset.org"}
         requested_this_file = download_images and not image_path.exists()
         if requested_this_file and consecutive_failures >= max_consecutive_failures:
             inventory.append({**prior_images.get(image_id, {}), "image_id": image_id,
-                              "relative_path": row["image_path"], "url": url,
+                              "relative_path": row["image_path"], **route,
                               "status": "not_attempted_due_to_network_failures"})
             continue
         try:
+            downloaded = False
+            response_metadata = {}
             if download_images:
                 if requested_this_file:
                     network_attempts += 1
                     if progress:
                         progress({"stage": "image_download_attempt", "image_id": image_id,
-                                  "ordinal": ordinal, "total": PILOT_SIZE, "attempt": network_attempts})
-                download_atomic(url, image_path, timeout, MAX_IMAGE_BYTES, image_info)
+                                  "ordinal": ordinal, "total": PILOT_SIZE, "attempt": network_attempts,
+                                  "transport": image_transport, "url": url})
+                downloaded = download_atomic(url, image_path, timeout, MAX_IMAGE_BYTES, image_info,
+                                             response_metadata=response_metadata)
                 if requested_this_file:
                     consecutive_failures = 0
-            entry = {"image_id": image_id, "relative_path": row["image_path"], "url": url,
+            origin = {key: value for key, value in prior_images.get(image_id, {}).items()
+                      if key.startswith("verified_download_")}
+            entry = {**origin, "image_id": image_id, "relative_path": row["image_path"], **route,
                      "status": "verified_local" if image_path.is_file() else "metadata_only_not_downloaded"}
             if image_path.is_file():
                 entry.update(image_info(image_path))
                 old = prior_images.get(image_id, {})
                 if old.get("sha256") and old["sha256"] != entry["sha256"]:
                     raise ValueError("Existing verified image hash changed")
+                if downloaded:
+                    entry.update(verified_download_url=url, verified_download_transport=image_transport,
+                                 verified_download_resolved_url=response_metadata.get("resolved_url"))
             elif prior_images.get(image_id, {}).get("sha256"):
                 raise ValueError("Previously verified image is now missing")
             inventory.append(entry)
@@ -424,13 +451,16 @@ def prepare_pilot(out_dir: Path, annotations: Path | None, download_annotations:
                     progress({"stage": "image_download_failed", "image_id": image_id,
                               "ordinal": ordinal, "consecutive_failures": consecutive_failures,
                               "stop_after": max_consecutive_failures, "error": f"{type(error).__name__}: {error}"})
-            failures.append({"image_id": image_id, "error": f"{type(error).__name__}: {error}"})
-            inventory.append({**prior_images.get(image_id, {}), "image_id": image_id, "relative_path": row["image_path"], "url": url,
+            failures.append({"image_id": image_id, "attempted_download": requested_this_file,
+                             "url": url, "image_transport": image_transport,
+                             "error": f"{type(error).__name__}: {error}"})
+            inventory.append({**prior_images.get(image_id, {}), "image_id": image_id, "relative_path": row["image_path"], **route,
                               "status": "blocked", "error": str(error)})
     # Inventory is a status ledger, intentionally refreshable; frozen experiment identity is separate.
     report = {"dataset": "A-OKVQA / COCO train2017", "requested_images": PILOT_SIZE,
               "verified_images": sum(r["status"] == "verified_local" for r in inventory),
               "downloads_requested": download_images, "network_attempts": network_attempts,
+              "image_transport": image_transport, "canonical_coco_bucket": "images.cocodataset.org",
               "max_consecutive_failures": max_consecutive_failures,
               "not_attempted_images": sum(r["status"] == "not_attempted_due_to_network_failures" for r in inventory),
               "images": inventory, "failures": failures}
@@ -452,4 +482,5 @@ def prepare_pilot(out_dir: Path, annotations: Path | None, download_annotations:
             "partition_role": "development_only", "questions": PILOT_SIZE, "distinct_images": PILOT_SIZE,
             "verified_images": report["verified_images"], "failures": failures,
             "network_attempts": network_attempts, "not_attempted_images": report["not_attempted_images"],
+            "image_transport": image_transport,
             "benchmark_results": False, "calibration_performed": False}

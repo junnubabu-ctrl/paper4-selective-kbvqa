@@ -7,7 +7,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from paper4_kbvqa.data.restart_pilot import prepare_pilot
+from paper4_kbvqa.data.restart_pilot import IMAGE_TRANSPORTS, prepare_pilot
 
 
 def main():
@@ -19,6 +19,8 @@ def main():
     source.add_argument("--download-annotations", action="store_true", help="One capped official archive request; read train member only")
     parser.add_argument("--download-record", type=Path, help="Observed official download JSON matching --archive URL/SHA/size")
     parser.add_argument("--download-images", action="store_true", help="Download only the 50 selected COCO train2017 images")
+    parser.add_argument("--image-transport", choices=IMAGE_TRANSPORTS, default="coco-host",
+                        help="HTTPS route: canonical COCO host or AWS path-style route to the same images.cocodataset.org bucket")
     parser.add_argument("--timeout", type=float, default=30.0, help="Socket timeout per request, seconds")
     parser.add_argument("--max-consecutive-failures", type=int, default=3,
                         help="Stop image requests after this many consecutive failures; ledger retains all 50 identities")
@@ -34,7 +36,8 @@ def main():
     try:
         report = prepare_pilot(args.out_dir, args.annotations, args.download_annotations, args.download_images, args.timeout,
                                archive_path=args.archive, download_record=args.download_record,
-                               max_consecutive_failures=args.max_consecutive_failures, progress=progress)
+                               max_consecutive_failures=args.max_consecutive_failures, progress=progress,
+                               image_transport=args.image_transport)
     except Exception as error:
         report = {"status": "BLOCKED", "error": f"{type(error).__name__}: {error}",
                   "benchmark_results": False, "calibration_performed": False}
