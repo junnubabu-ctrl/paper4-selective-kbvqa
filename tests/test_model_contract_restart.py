@@ -8,6 +8,7 @@ from paper4_kbvqa.verification.llm_critic import QwenLabelLikelihoodCritic, _nor
 
 @pytest.mark.parametrize('raw,status', [
     ('cat', 'invalid_json'),
+    ('{"answer": "to surf", "evidence_ids": ["wikipedia:189016", "wikidata:Q457689", "wikidata:Q17492352', 'invalid_json'),
     ('```json\n{"answer":"cat","evidence_ids":[]}\n```', 'invalid_json'),
     ('{"answer":"cat","answer":"dog","evidence_ids":[]}', 'invalid_json'),
     ('{"answer":"cat","evidence_ids":[],"score":NaN}', 'invalid_json'),
@@ -164,6 +165,7 @@ def test_critic_result_archives_raw_scores_and_common_prompt(monkeypatch):
 @pytest.mark.parametrize('raw,valid,include_evidence_ids', [
     (' \n{"answer":"cat","evidence_ids":["e1","missing","e1"]}\n ', True, True),
     (' cat \n', False, True),
+    ('{"answer": "to surf", "evidence_ids": ["wikipedia:189016", "wikidata:Q457689", "wikidata:Q17492352', False, True),
     ('{"answer":"cat"}', True, False),
     ('cat', False, False),
 ])
@@ -195,6 +197,7 @@ def test_generation_archives_exact_raw_tokens_grid_and_parser_status(monkeypatch
         device = 'TEST_ONLY_DEVICE'
         config = SimpleNamespace(_commit_hash='a'*40, to_dict=lambda: {'TEST_ONLY_CONFIG': True})
         def generate(self, **kwargs):
+            self.decoding = {k: kwargs[k] for k in ['max_new_tokens', 'do_sample']}
             return SimpleNamespace(sequences=np.array([[1, 2, 2, 3]]), scores=[Scores(), Scores()])
     def log_softmax(values, dim):
         return values - np.log(np.exp(values).sum())
@@ -225,7 +228,7 @@ def test_generation_archives_exact_raw_tokens_grid_and_parser_status(monkeypatch
         assert 'exactly the key answer.' in system and 'evidence_ids' not in system
         assert user_text.endswith('Test evidence') and '[e1]' not in user_text
         assert result['generation_identity']['prompt_version'] == 'evitrust-answer-only-json-v2'
-    assert result['generation_identity']['decoding'] == {'max_new_tokens': 48, 'do_sample': False}
+    assert result['generation_identity']['decoding'] == generator.model.decoding == {'max_new_tokens': 192, 'do_sample': False}
     assert result['answer_token_confidence'] is None
     if valid and include_evidence_ids:
         assert result['supporting_evidence_ids'] == ['e1', 'missing', 'e1']

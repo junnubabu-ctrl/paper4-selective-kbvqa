@@ -226,8 +226,11 @@ class Qwen25VLGenerator(AnswerGenerator):
             {"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": prompt}]}]
         text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.processor(text=[text], images=[image], return_tensors="pt").to(self.model.device)
+        # The first live JSON answer exhausted 48 tokens mid-citation. Keep a
+        # bounded budget with more room for the declared answer/citation schema.
+        answer_max_new_tokens = 192
         with torch.inference_mode():
-            out = self.model.generate(**inputs, max_new_tokens=48, do_sample=False,
+            out = self.model.generate(**inputs, max_new_tokens=answer_max_new_tokens, do_sample=False,
                 return_dict_in_generate=True, output_scores=True)
         prompt_len = int(inputs.input_ids.shape[1])
         gen_ids = out.sequences[0][prompt_len:]
@@ -243,7 +246,7 @@ class Qwen25VLGenerator(AnswerGenerator):
             "model_id": self.model_name, "requested_revision": self.revision,
             "resolved_revision": getattr(self.model.config, "_commit_hash", None),
             "model_config": self.model.config.to_dict(), "processor_config": self.processor.image_processor.to_dict(),
-            "decoding": {"max_new_tokens": 48, "do_sample": False}, "seed": int(torch.initial_seed()),
+            "decoding": {"max_new_tokens": answer_max_new_tokens, "do_sample": False}, "seed": int(torch.initial_seed()),
             "four_bit": self.load_in_4bit, "max_pixels": self.max_pixels, "loading_identity": self.loading_identity,
             "generation_config": (self.model.generation_config.to_dict()
                 if hasattr(getattr(self.model, "generation_config", None), "to_dict") else None)}
