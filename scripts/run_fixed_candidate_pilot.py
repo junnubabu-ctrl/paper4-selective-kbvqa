@@ -29,6 +29,7 @@ from paper4_kbvqa.execution.fixed_candidate import (
     digest, file_digest,
 )
 from paper4_kbvqa.types import Evidence
+from paper4_kbvqa.knowledge.http_providers import WIKIMEDIA_RATE_POLICY
 
 BASE_SOURCE_COMMIT = "45190e6d2bee19e9805751fd1bed9aa1430ec43d"
 
@@ -220,6 +221,7 @@ def main(argv=None) -> int:
             "sources": sources, "models": {x: pins[x] for x in ["generator", "qwen"]},
             "max_pixels": args.max_pixels, "four_bit": not args.no_4bit,
             "continue_on_invalid": args.continue_on_invalid,
+            "wikimedia_rate_policy": WIKIMEDIA_RATE_POLICY,
             "execution_config": asdict(config), "base_source_commit": BASE_SOURCE_COMMIT,
             "benchmark_result": False, "calibration_implemented": False,
             "completion_gate": "Every requested input, candidate and critic record must validate",
@@ -237,7 +239,8 @@ def main(argv=None) -> int:
             raise ValueError("Manifest must declare source_split=train; held-out evaluation is prohibited")
     source_identity = {"mode": plan["source_mode"], "sources": sources,
                        "provider_config": {"retrieval_top_k": args.retrieval_top_k,
-                                           "timeout_seconds": 15},
+                                           "timeout_seconds": 15,
+                                           "wikimedia_rate_policy": WIKIMEDIA_RATE_POLICY},
                        "upstream_revisions_verified": False}
     if args.source_ledger:
         source_identity["source_ledger_sha256"] = file_digest(args.source_ledger)
