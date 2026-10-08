@@ -168,10 +168,17 @@ class Qwen25VLGenerator(AnswerGenerator):
         from PIL import Image
         with Image.open(image_path) as source:
             image = source.convert("RGB")
-        prompt = ("Identify only visible entities in the image that are relevant to answering the question. "
-            "Return strict JSON: {\"entities\":[...]} with at most " + str(int(max_entities)) +
-            " short noun phrases. Do not answer the question.\nQuestion: " + question)
-        messages = [{"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": prompt}]}]
+        prompt_version = "evitrust-visible-entities-json-v2"
+        system = ("You are a visual grounding extractor. Return exactly one valid JSON object and nothing else. "
+            "The object must have exactly the key entities, whose value is an array of nonempty strings. "
+            "Describe only directly visible entities. Do not answer the question or infer intentions, causes, "
+            "past events, or invisible facts. Do not include Markdown, commentary, or additional keys.")
+        prompt = ("Identify only visible entities in the image that are relevant to the question. "
+            "Use at most " + str(int(max_entities)) + " short noun phrases. "
+            "The JSON schema is illustrated by {\"entities\":[]}; populate the array only with visible entities. "
+            "Return an empty array when no relevant entities are visible.\nQuestion: " + question)
+        messages = [{"role": "system", "content": system},
+            {"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": prompt}]}]
         text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.processor(text=[text], images=[image], return_tensors="pt").to(self.model.device)
         with torch.inference_mode():
@@ -181,7 +188,9 @@ class Qwen25VLGenerator(AnswerGenerator):
         entities, status, error = self._parse_entities(decoded, max_entities)
         self.last_entity_record = {"entities": entities, "raw_text": decoded,
             "generated_token_ids": gen.tolist(), "parser_status": status, "parser_error": error,
-            "rendered_prompt": text, "question": question, "loading_identity": self.loading_identity,
+            "rendered_prompt": text, "prompt_version": prompt_version,
+            "decoding": {"max_new_tokens": 64, "do_sample": False},
+            "question": question, "loading_identity": self.loading_identity,
             **self._image_record(image_path, image, inputs)}
         return entities
 
@@ -201,9 +210,20 @@ class Qwen25VLGenerator(AnswerGenerator):
             prompt = ("Answer the visual question using the image and only relevant supplied evidence. "
                 "Return strict JSON with exactly the key answer; answer must be a nonempty concise string.\n"
                 f"Question: {question}\nEvidence:\n{evidence_text}")
+        prompt_version = ("evitrust-answer-evidence-json-v2" if self.include_evidence_ids
+                          else "evitrust-answer-only-json-v2")
+        system = ("You are a visual question answering assistant. Return exactly one valid JSON object and nothing else. "
+            "Do not include Markdown, commentary, or additional keys. The answer must be a nonempty concise string. ")
+        if self.include_evidence_ids:
+            system += ("The object must have exactly the keys answer and evidence_ids. "
+                "evidence_ids must be an array of strings containing only supplied evidence IDs that directly support "
+                "the answer. Do not invent or alter IDs. Use an empty array when no supplied evidence supports the answer.")
+        else:
+            system += "The object must have exactly the key answer."
         with Image.open(image_path) as source:
             image = source.convert("RGB")
-        messages = [{"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": prompt}]}]
+        messages = [{"role": "system", "content": system},
+            {"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": prompt}]}]
         text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.processor(text=[text], images=[image], return_tensors="pt").to(self.model.device)
         with torch.inference_mode():
@@ -219,7 +239,8 @@ class Qwen25VLGenerator(AnswerGenerator):
         parsed = self._parse_details(decoded, [e.evidence_id for e in evidence], self.include_evidence_ids)
         identity = {**self._image_record(image_path, image, inputs), "question": question,
             "ordered_evidence": [dict(id=e.evidence_id, text=e.text, source=e.source, uri=e.uri) for e in evidence],
-            "rendered_prompt": text, "model_id": self.model_name, "requested_revision": self.revision,
+            "rendered_prompt": text, "prompt_version": prompt_version,
+            "model_id": self.model_name, "requested_revision": self.revision,
             "resolved_revision": getattr(self.model.config, "_commit_hash", None),
             "model_config": self.model.config.to_dict(), "processor_config": self.processor.image_processor.to_dict(),
             "decoding": {"max_new_tokens": 48, "do_sample": False}, "seed": int(torch.initial_seed()),

@@ -161,11 +161,13 @@ def test_critic_result_archives_raw_scores_and_common_prompt(monkeypatch):
     assert 'critic_request_sha256' in result['loading_identity']
     assert result['resolved_revision'] is None  # stand-in is not checkpoint evidence
 
-@pytest.mark.parametrize('raw,valid', [
-    (' \n{"answer":"cat","evidence_ids":["e1","missing","e1"]}\n ', True),
-    (' cat \n', False),
+@pytest.mark.parametrize('raw,valid,include_evidence_ids', [
+    (' \n{"answer":"cat","evidence_ids":["e1","missing","e1"]}\n ', True, True),
+    (' cat \n', False, True),
+    ('{"answer":"cat"}', True, False),
+    ('cat', False, False),
 ])
-def test_generation_archives_exact_raw_tokens_grid_and_parser_status(monkeypatch, tmp_path, raw, valid):
+def test_generation_archives_exact_raw_tokens_grid_and_parser_status(monkeypatch, tmp_path, raw, valid, include_evidence_ids):
     from contextlib import nullcontext
     import numpy as np
     from PIL import Image
@@ -183,7 +185,8 @@ def test_generation_archives_exact_raw_tokens_grid_and_parser_status(monkeypatch
     class Processor:
         image_processor = SimpleNamespace(patch_size=14, to_dict=lambda: {'patch_size': 14})
         def apply_chat_template(self, messages, **kwargs):
-            return 'TEST_ONLY_RENDERED_PROMPT ' + messages[0]['content'][1]['text']
+            self.messages = messages
+            return 'TEST_ONLY_RENDERED_PROMPT ' + messages[-1]['content'][1]['text']
         def __call__(self, **kwargs):
             return Inputs(input_ids=np.array([[1, 2]]), image_grid_thw=np.array([[1, 2, 3]]))
         def decode(self, tokens, **kwargs):
@@ -199,7 +202,7 @@ def test_generation_archives_exact_raw_tokens_grid_and_parser_status(monkeypatch
         initial_seed=lambda: 2026, log_softmax=log_softmax))
     image_path = tmp_path / 'test_only.png'
     Image.new('RGB', (42, 28)).save(image_path)
-    generator = Qwen25VLGenerator(revision='a'*40)
+    generator = Qwen25VLGenerator(revision='a'*40, include_evidence_ids=include_evidence_ids)
     generator._loaded = True
     generator.model, generator.processor = Model(), Processor()
     generator.loading_identity = {'TEST_ONLY_STAND_IN': True}
@@ -211,9 +214,81 @@ def test_generation_archives_exact_raw_tokens_grid_and_parser_status(monkeypatch
     assert result['generation_identity']['image_grid_thw'] == [[1, 2, 3]]
     assert result['generation_identity']['processed_image_dimensions'] == [[42, 28]]
     assert result['generation_identity']['image_dimensions_passed_to_processor'] == [42, 28]
+    assert [m['role'] for m in generator.processor.messages] == ['system', 'user']
+    system = generator.processor.messages[0]['content']
+    user_text = generator.processor.messages[-1]['content'][1]['text']
+    if include_evidence_ids:
+        assert 'exactly the keys answer and evidence_ids' in system
+        assert user_text.endswith('[e1] Test evidence')
+        assert result['generation_identity']['prompt_version'] == 'evitrust-answer-evidence-json-v2'
+    else:
+        assert 'exactly the key answer.' in system and 'evidence_ids' not in system
+        assert user_text.endswith('Test evidence') and '[e1]' not in user_text
+        assert result['generation_identity']['prompt_version'] == 'evitrust-answer-only-json-v2'
+    assert result['generation_identity']['decoding'] == {'max_new_tokens': 48, 'do_sample': False}
     assert result['answer_token_confidence'] is None
-    if valid:
+    if valid and include_evidence_ids:
         assert result['supporting_evidence_ids'] == ['e1', 'missing', 'e1']
         assert result['valid_evidence_ids'] == ['e1', 'e1']
+    elif valid:
+        assert result['answer'] == 'cat' and result['supporting_evidence_ids'] == []
     else:
         assert result['answer'] == '' and result['supporting_evidence_ids'] == []
+
+
+@pytest.mark.parametrize('raw,valid', [
+    ('{"entities":["surfboard"]}', True),
+    ('The man has finished surfing and is walking back to the beach.', False),
+])
+def test_entity_prompt_contract_preserves_schema_failure_and_raw_model_output(monkeypatch, tmp_path, raw, valid):
+    from contextlib import nullcontext
+    import numpy as np
+    from PIL import Image
+    class Inputs(dict):
+        def __getattr__(self, key):
+            return self[key]
+        def to(self, device):
+            return self
+    class Processor:
+        image_processor = SimpleNamespace(patch_size=14)
+        def apply_chat_template(self, messages, **kwargs):
+            self.messages = messages
+            return 'TEST_ONLY_ENTITY_PROMPT ' + messages[0]['content'] + messages[-1]['content'][1]['text']
+        def __call__(self, **kwargs):
+            return Inputs(input_ids=np.array([[1, 2]]), image_grid_thw=np.array([[1, 2, 3]]))
+        def decode(self, tokens, **kwargs):
+            return raw
+    class Model:
+        device = 'TEST_ONLY_DEVICE'
+        def generate(self, **kwargs):
+            self.decoding = {k: kwargs[k] for k in ['max_new_tokens', 'do_sample']}
+            return np.array([[1, 2, 2, 3]])
+    monkeypatch.setitem(sys.modules, 'torch', SimpleNamespace(inference_mode=nullcontext))
+    image_path = tmp_path / 'test_only.png'
+    Image.new('RGB', (42, 28)).save(image_path)
+    generator = Qwen25VLGenerator(revision='a'*40)
+    generator._loaded = True
+    generator.model, generator.processor = Model(), Processor()
+    generator.loading_identity = {'TEST_ONLY_STAND_IN': True}
+    question = 'Why is he carrying the surfboard?'
+    entities = generator.extract_visual_entities(str(image_path), question)
+    messages = generator.processor.messages
+    assert [m['role'] for m in messages] == ['system', 'user']
+    assert 'visual grounding extractor' in messages[0]['content']
+    assert 'Do not answer the question or infer intentions' in messages[0]['content']
+    user_text = messages[-1]['content'][1]['text']
+    assert '{"entities":[]}' in user_text and '[...]' not in user_text
+    assert user_text.endswith('Question: ' + question)
+    record = generator.last_entity_record
+    assert record['raw_text'] == raw
+    assert record['generated_token_ids'] == [2, 3]
+    assert record['prompt_version'] == 'evitrust-visible-entities-json-v2'
+    assert record['decoding'] == generator.model.decoding == {'max_new_tokens': 64, 'do_sample': False}
+    assert record['question'] == question
+    assert record['image_dimensions_passed_to_processor'] == [42, 28]
+    if valid:
+        assert entities == record['entities'] == ['surfboard']
+        assert record['parser_status'] == 'valid' and record['parser_error'] is None
+    else:
+        assert entities == record['entities'] == []
+        assert record['parser_status'] == 'invalid_json' and record['parser_error']
