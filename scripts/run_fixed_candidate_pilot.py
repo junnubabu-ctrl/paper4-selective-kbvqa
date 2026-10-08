@@ -194,6 +194,8 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--no-4bit", action="store_true")
     parser.add_argument("--no-auto-entities", action="store_true")
+    parser.add_argument("--continue-on-invalid", action="store_true", default=False,
+                        help="Attempt all bounded TRAIN development inputs while archiving invalid records; failures still exit nonzero")
     parser.add_argument("--plan", action="store_true", help="Print bounded plan without reading images/loading models")
     args = parser.parse_args(argv)
     if not 1 <= args.max_samples <= 50:
@@ -217,6 +219,7 @@ def main(argv=None) -> int:
             "source_mode": "static_evidence_alternative" if args.evidence_jsonl else "live_capture_once",
             "sources": sources, "models": {x: pins[x] for x in ["generator", "qwen"]},
             "max_pixels": args.max_pixels, "four_bit": not args.no_4bit,
+            "continue_on_invalid": args.continue_on_invalid,
             "execution_config": asdict(config), "base_source_commit": BASE_SOURCE_COMMIT,
             "benchmark_result": False, "calibration_implemented": False,
             "completion_gate": "Every requested input, candidate and critic record must validate",
@@ -306,7 +309,8 @@ def main(argv=None) -> int:
             durable_json(environment_path, collect_environment())
         pilot = FixedCandidatePilot(generator=generator, critic=critic, provider=provider,
                                     evidence_filter=RelevanceFilter(), execution_config=config,
-                                    run_config=run_config, source_identity=source_identity)
+                                    run_config=run_config, source_identity=source_identity,
+                                    stop_on_invalid=not args.continue_on_invalid)
         summary = pilot.run_manifest(samples, output_dir=output)
         print(json.dumps({k: v for k, v in summary.items() if k != "matched"}, indent=2))
         session_status = "COMPLETED_VALID" if summary["invalid"] == 0 else "COMPLETED_INVALID"

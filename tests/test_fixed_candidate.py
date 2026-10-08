@@ -226,6 +226,70 @@ def test_provider_failure_stops_bounded_pilot_and_reports_unattempted(setup):
     assert rec["errors"][0]["type"] == "TimeoutError"
 
 
+@pytest.mark.parametrize("continue_on_invalid", [False, True])
+def test_cli_continue_option_attempts_remaining_inputs_without_promoting_failure(setup, monkeypatch, capsys, continue_on_invalid):
+    """TEST_ONLY model/CUDA stand-ins test CLI behavior, not actual inference."""
+    import importlib.util
+    import sys
+    from types import SimpleNamespace
+    from paper4_kbvqa.generation import qwen_vl
+    from paper4_kbvqa.verification import llm_critic
+    from paper4_kbvqa.filtering import relevance
+    from paper4_kbvqa.utils import seed, environment
+    sample, _, critic, _, out = setup
+    second = VQASample("qid2", sample.image_path, sample.question, metadata=sample.metadata)
+    class FirstInvalidGenerator(Generator):
+        def generate(self, image_path, question, evidence):
+            result = super().generate(image_path, question, evidence)
+            if self.answer_calls == 1:
+                result.update(answer="", parsed_ok=False, parser_status="invalid_json",
+                              raw_text='{"answer":"cutting","evidence_ids":["ev1"',
+                              parser_error="TEST_ONLY truncated output")
+            return result
+    generator = FirstInvalidGenerator()
+    script = Path(__file__).resolve().parents[1] / "scripts/run_fixed_candidate_pilot.py"
+    spec = importlib.util.spec_from_file_location("continue_cli_test", script)
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    monkeypatch.setattr(cli, "load_pilot_inputs", lambda args: ([sample, second], {"TEST_ONLY": True}))
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: True, device_count=lambda: 0,
+                             get_device_name=lambda index=0: "TEST_ONLY_DEVICE"),
+        version=SimpleNamespace(cuda="TEST_ONLY")))
+    monkeypatch.setattr(seed, "set_seed", lambda value: None)
+    monkeypatch.setattr(environment, "collect_environment", lambda: {"TEST_ONLY": True})
+    monkeypatch.setattr(qwen_vl, "Qwen25VLGenerator", lambda **kwargs: generator)
+    monkeypatch.setattr(llm_critic, "QwenLabelLikelihoodCritic", lambda **kwargs: critic)
+    monkeypatch.setattr(relevance, "RelevanceFilter", Filter)
+    evidence = out.parent / "TEST_ONLY_evidence.jsonl"
+    fixture = {"evidence_id": "ev1", "text": "A knife is used for cutting.",
+               "source": "test-source", "uri": "https://example.test/knife", "retrieval_score": .9}
+    evidence.write_text("".join(json.dumps({"question_id": item.question_id,
+                                          "evidence": [fixture]}) + "\n" for item in [sample, second]))
+    args = ["--pilot-dir", str(out.parent / "TEST_ONLY_prepared"), "--out-dir", str(out),
+            "--max-samples", "2", "--evidence-jsonl", str(evidence)]
+    if continue_on_invalid:
+        args.append("--continue-on-invalid")
+    assert cli.main(args) == 2
+    printed = json.loads(capsys.readouterr().out)
+    summary = read_verified(out / "pilot_summary.json")
+    attempted = 2 if continue_on_invalid else 1
+    assert printed["attempted"] == summary["attempted"] == attempted
+    assert summary["requested"] == 2 and summary["unattempted"] == 2 - attempted
+    assert summary["invalid"] == 1 and summary["valid"] == int(continue_on_invalid)
+    assert generator.answer_calls == attempted and critic.calls == int(continue_on_invalid)
+    assert summary["status"] == ("COMPLETED_INVALID_DEVELOPMENT_PILOT" if continue_on_invalid
+                                 else "BLOCKED_INVALID_DEVELOPMENT_PILOT")
+    archived = [read_verified(p) for p in (out / "candidates").glob("*.json")]
+    invalid = next(row for row in archived if row["question_id"] == "qid1")
+    assert invalid["status"] == "INVALID" and invalid["candidate_eligible"] is False
+    assert invalid["generator_result"]["parser_error"] == "TEST_ONLY truncated output"
+    run = read_verified(out / "run_identity.json")
+    assert run["stop_on_invalid"] is (not continue_on_invalid)
+    assert run["run_config"]["plan"]["continue_on_invalid"] is continue_on_invalid
+    assert summary["benchmark_result"] is summary["scientific_claims_validated"] is False
+
+
 def test_filter_cannot_invent_context_evidence(setup):
     sample, generator, critic, provider, out = setup
     class InventingFilter:
