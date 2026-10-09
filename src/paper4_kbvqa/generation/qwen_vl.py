@@ -5,6 +5,9 @@ import math
 from pathlib import Path
 
 from paper4_kbvqa.generation.base import AnswerGenerator, build_prompt_payload
+from paper4_kbvqa.generation.json_constraints import (
+    LIKELIHOOD_SOURCE, build_json_constraint, require_json_constraints,
+)
 from paper4_kbvqa.types import Evidence
 
 
@@ -49,18 +52,70 @@ def _validate_loaded_revision(model, requested: str):
     return resolved
 
 
+def _response_likelihood(out, gen_ids, *, constrained_json: bool):
+    # HF 4.57.1 documents logits as unprocessed and scores as processed:
+    # https://huggingface.co/docs/transformers/v4.57.1/en/internal/generation_utils
+    # The original path intentionally retains its processed-score definition.
+    import torch
+    if constrained_json:
+        logits = getattr(out, "logits", None)
+        if logits is None or len(logits) != len(gen_ids):
+            raise RuntimeError("JSON constrained decoding requires unprocessed generation logits "
+                "for every generated token; masked output scores cannot supply likelihoods")
+    else:
+        logits = out.scores
+    token_logps = [float(torch.log_softmax(values[0].float(), dim=-1)[int(token)].item())
+                   for token, values in zip(gen_ids, logits)]
+    finite = len(token_logps) == len(gen_ids) and bool(token_logps) and all(math.isfinite(x) for x in token_logps)
+    raw_conf = float(math.exp(sum(token_logps) / len(token_logps))) if finite else float("nan")
+    return token_logps, raw_conf, "finite" if finite else "invalid_token_scores"
+
+
+def _constraint_tokenizer_compatibility(model, tokenizer) -> dict:
+    if tokenizer is None:
+        raise RuntimeError("JSON constrained decoding requires processor.tokenizer")
+    tokenizer_eos = getattr(tokenizer, "eos_token_id", None)
+    eos = getattr(getattr(model, "generation_config", None), "eos_token_id", None)
+    if eos is None:
+        eos = getattr(getattr(model, "config", None), "eos_token_id", None)
+    eos_ids = [int(value) for value in eos] if isinstance(eos, (list, tuple)) else [int(eos)] if eos is not None else []
+    if tokenizer_eos is None or int(tokenizer_eos) not in eos_ids:
+        raise RuntimeError("JSON constraint tokenizer EOS must be accepted by the model generation configuration")
+    embeddings = model.get_output_embeddings() if hasattr(model, "get_output_embeddings") else None
+    width = int(embeddings.weight.shape[0]) if embeddings is not None else getattr(getattr(model, "config", None), "vocab_size", None)
+    vocab_ids = list(tokenizer.get_vocab().values())
+    if width is None or not vocab_ids or any(int(value) < 0 or int(value) >= int(width) for value in vocab_ids + [tokenizer_eos]):
+        raise RuntimeError("JSON constraint tokenizer IDs must fit the model output vocabulary")
+    # Qwen has padded output rows beyond tokenizer vocabulary; equality is not
+    # required, and the prefix callback excludes those undefined token IDs.
+    return {"identity_version": "evitrust-tokenizer-model-compatibility-v1",
+        "model_output_vocab_size": int(width), "tokenizer_max_token_id": max(int(value) for value in vocab_ids),
+        "model_eos_token_ids": eos_ids, "constraint_eos_token_ids": [int(tokenizer_eos)]}
+
+
+def _generation_termination(gen_ids, budget: int, compatibility: dict) -> dict:
+    terminal = int(gen_ids[-1]) if len(gen_ids) else None
+    eos = terminal in compatibility["constraint_eos_token_ids"]
+    status = "eos" if eos else "length_limit_without_eos" if len(gen_ids) >= budget else "stopped_without_eos"
+    return {"identity_version": "evitrust-generation-termination-v1", "status": status,
+        "generated_token_count": len(gen_ids), "max_new_tokens": budget, "terminal_token_id": terminal,
+        "accepted_eos_token_ids": compatibility["constraint_eos_token_ids"]}
+
+
 class Qwen25VLGenerator(AnswerGenerator):
     """Frozen Qwen adapter; software tests do not establish genuine GPU execution.
 
     ``raw_confidence`` is whole-response token likelihood, including structure and
     citation tokens. It is not an answer-only probability or correctness confidence.
     """
-    def __init__(self, model_name="Qwen/Qwen2.5-VL-3B-Instruct", revision="main", load_in_4bit=True, max_pixels=None, include_evidence_ids=True):
+    def __init__(self, model_name="Qwen/Qwen2.5-VL-3B-Instruct", revision="main", load_in_4bit=True, max_pixels=None, include_evidence_ids=True, constrained_json=False):
         self.model_name = model_name
         self.revision = revision
         self.load_in_4bit = load_in_4bit
         self.max_pixels = max_pixels
         self.include_evidence_ids = include_evidence_ids
+        self.constrained_json = bool(constrained_json)
+        self._json_tokenizer_data_cache = {}
         self._loaded = False
         self.loading_identity = None
         self.last_entity_record = None
@@ -68,6 +123,8 @@ class Qwen25VLGenerator(AnswerGenerator):
     def _load(self):
         if self._loaded:
             return
+        if self.constrained_json:
+            require_json_constraints()
         try:
             import torch
             from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
@@ -181,17 +238,49 @@ class Qwen25VLGenerator(AnswerGenerator):
             {"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": prompt}]}]
         text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = self.processor(text=[text], images=[image], return_tensors="pt").to(self.model.device)
+        constraint_identity = None
+        generation_kwargs = {"max_new_tokens": 64, "do_sample": False}
+        if self.constrained_json:
+            tokenizer = getattr(self.processor, "tokenizer", None)
+            compatibility = _constraint_tokenizer_compatibility(self.model, tokenizer)
+            prefix_fn, constraint_identity = build_json_constraint(tokenizer, "entities",
+                tokenizer_data_cache=self._json_tokenizer_data_cache)
+            constraint_identity["tokenizer_model_compatibility"] = compatibility
+            generation_kwargs.update(prefix_allowed_tokens_fn=prefix_fn, return_dict_in_generate=True,
+                                     output_logits=True, output_scores=False)
         with torch.inference_mode():
-            out = self.model.generate(**inputs, max_new_tokens=64, do_sample=False)
-        gen = out[0][inputs.input_ids.shape[1]:]
+            out = self.model.generate(**inputs, **generation_kwargs)
+        sequences = out.sequences if self.constrained_json else out
+        gen = sequences[0][inputs.input_ids.shape[1]:]
         decoded = self.processor.decode(gen, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        likelihood = _response_likelihood(out, gen, constrained_json=True) if self.constrained_json else None
         entities, status, error = self._parse_entities(decoded, max_entities)
+        strict_status = status
+        if self.constrained_json:
+            termination = _generation_termination(gen, 64, compatibility)
+            if termination["status"] == "length_limit_without_eos":
+                entities, status, error = [], "length_limit_without_eos", "Generation reached its token limit without an accepted terminal EOS"
         self.last_entity_record = {"entities": entities, "raw_text": decoded,
             "generated_token_ids": gen.tolist(), "parser_status": status, "parser_error": error,
             "rendered_prompt": text, "prompt_version": prompt_version,
             "decoding": {"max_new_tokens": 64, "do_sample": False},
             "question": question, "loading_identity": self.loading_identity,
             **self._image_record(image_path, image, inputs)}
+        if self.constrained_json:
+            logps, confidence, confidence_status = likelihood
+            self.last_entity_record.update(generated_token_logprobs=logps, raw_confidence=confidence,
+                raw_confidence_status=confidence_status,
+                raw_confidence_interpretation="uncalibrated_whole_response_token_likelihood",
+                raw_output=decoded, likelihood_score_source=LIKELIHOOD_SOURCE,
+                strict_parser_status=strict_status, generation_termination=termination,
+                seed=int(torch.initial_seed()),
+                generation_config=(self.model.generation_config.to_dict()
+                    if hasattr(getattr(self.model, "generation_config", None), "to_dict") else None))
+            self.last_entity_record["decoding"].update(json_constraint=constraint_identity,
+                likelihood_score_source=LIKELIHOOD_SOURCE,
+                likelihood_score_semantics="original_model_whole_response_likelihood_conditioned_on_generated_prefix",
+                termination_policy="require_eos_at_length_limit_v1",
+                return_dict_in_generate=True, output_logits=True, output_scores=False)
         return entities
 
     def generate(self, image_path: str, question: str, evidence: list[Evidence]) -> dict:
@@ -229,17 +318,30 @@ class Qwen25VLGenerator(AnswerGenerator):
         # The first live JSON answer exhausted 48 tokens mid-citation. Keep a
         # bounded budget with more room for the declared answer/citation schema.
         answer_max_new_tokens = 192
+        constraint_identity = None
+        generation_kwargs = {"max_new_tokens": answer_max_new_tokens, "do_sample": False,
+                             "return_dict_in_generate": True, "output_scores": True}
+        if self.constrained_json:
+            kind = "answer_with_evidence_ids" if self.include_evidence_ids else "answer_only"
+            tokenizer = getattr(self.processor, "tokenizer", None)
+            compatibility = _constraint_tokenizer_compatibility(self.model, tokenizer)
+            prefix_fn, constraint_identity = build_json_constraint(tokenizer, kind,
+                tokenizer_data_cache=self._json_tokenizer_data_cache)
+            constraint_identity["tokenizer_model_compatibility"] = compatibility
+            generation_kwargs.update(prefix_allowed_tokens_fn=prefix_fn, output_logits=True, output_scores=False)
         with torch.inference_mode():
-            out = self.model.generate(**inputs, max_new_tokens=answer_max_new_tokens, do_sample=False,
-                return_dict_in_generate=True, output_scores=True)
+            out = self.model.generate(**inputs, **generation_kwargs)
         prompt_len = int(inputs.input_ids.shape[1])
         gen_ids = out.sequences[0][prompt_len:]
         decoded = self.processor.decode(gen_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-        token_logps = [float(torch.log_softmax(logits[0].float(), dim=-1)[int(token)].item())
-                       for token, logits in zip(gen_ids, out.scores)]
-        finite = len(token_logps) == len(gen_ids) and bool(token_logps) and all(math.isfinite(x) for x in token_logps)
-        raw_conf = float(math.exp(sum(token_logps) / len(token_logps))) if finite else float("nan")
+        token_logps, raw_conf, confidence_status = _response_likelihood(out, gen_ids, constrained_json=self.constrained_json)
         parsed = self._parse_details(decoded, [e.evidence_id for e in evidence], self.include_evidence_ids)
+        strict_status = parsed["parser_status"]
+        if self.constrained_json:
+            termination = _generation_termination(gen_ids, answer_max_new_tokens, compatibility)
+            if termination["status"] == "length_limit_without_eos":
+                parsed.update(answer="", parsed_ok=False, parser_status="length_limit_without_eos",
+                    parser_error="Generation reached its token limit without an accepted terminal EOS")
         identity = {**self._image_record(image_path, image, inputs), "question": question,
             "ordered_evidence": [dict(id=e.evidence_id, text=e.text, source=e.source, uri=e.uri) for e in evidence],
             "rendered_prompt": text, "prompt_version": prompt_version,
@@ -250,10 +352,21 @@ class Qwen25VLGenerator(AnswerGenerator):
             "four_bit": self.load_in_4bit, "max_pixels": self.max_pixels, "loading_identity": self.loading_identity,
             "generation_config": (self.model.generation_config.to_dict()
                 if hasattr(getattr(self.model, "generation_config", None), "to_dict") else None)}
+        if self.constrained_json:
+            identity["decoding"].update(json_constraint=constraint_identity,
+                likelihood_score_source=LIKELIHOOD_SOURCE,
+                likelihood_score_semantics="original_model_whole_response_likelihood_conditioned_on_generated_prefix",
+                termination_policy="require_eos_at_length_limit_v1",
+                return_dict_in_generate=True, output_logits=True, output_scores=False)
         key = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
-        return {**parsed, "raw_confidence": raw_conf, "raw_confidence_status": "finite" if finite else "invalid_token_scores",
-            "supporting_evidence_ids": parsed["raw_evidence_ids"], "raw_text": decoded, "raw_output": decoded,
+        result = {**parsed, "raw_confidence": raw_conf, "raw_confidence_status": confidence_status,
+            "supporting_evidence_ids": parsed["raw_evidence_ids"] if parsed["parsed_ok"] else [], "raw_text": decoded, "raw_output": decoded,
             "raw_confidence_interpretation": "uncalibrated_whole_response_token_likelihood",
             "generated_token_ids": gen_ids.tolist(), "generated_token_logprobs": token_logps,
             "answer_token_confidence": None, "answer_token_confidence_status": "not_implemented_whole_response_only",
             "prediction_key": key, "generation_identity": identity}
+        if self.constrained_json:
+            result["likelihood_score_source"] = LIKELIHOOD_SOURCE
+            result["strict_parser_status"] = strict_status
+            result["generation_termination"] = termination
+        return result

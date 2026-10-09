@@ -195,6 +195,8 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--no-4bit", action="store_true")
     parser.add_argument("--no-auto-entities", action="store_true")
+    parser.add_argument("--constrained-json", action="store_true", default=False,
+                        help="Opt-in versioned JSON-schema decoding; likelihood uses unprocessed model logits")
     parser.add_argument("--continue-on-invalid", action="store_true", default=False,
                         help="Attempt all bounded TRAIN development inputs while archiving invalid records; failures still exit nonzero")
     parser.add_argument("--plan", action="store_true", help="Print bounded plan without reading images/loading models")
@@ -221,6 +223,9 @@ def main(argv=None) -> int:
             "sources": sources, "models": {x: pins[x] for x in ["generator", "qwen"]},
             "max_pixels": args.max_pixels, "four_bit": not args.no_4bit,
             "continue_on_invalid": args.continue_on_invalid,
+            "constrained_json": args.constrained_json,
+            "likelihood_score_source": ("unprocessed_generation_logits" if args.constrained_json
+                                        else "legacy_processed_generation_scores"),
             "wikimedia_rate_policy": WIKIMEDIA_RATE_POLICY,
             "execution_config": asdict(config), "base_source_commit": BASE_SOURCE_COMMIT,
             "benchmark_result": False, "calibration_implemented": False,
@@ -286,7 +291,7 @@ def main(argv=None) -> int:
         from paper4_kbvqa.verification.llm_critic import QwenLabelLikelihoodCritic
         set_seed(args.seed)
         versions = {}
-        for name in ["torch", "transformers", "accelerate", "bitsandbytes", "numpy", "scikit-learn", "pillow"]:
+        for name in ["torch", "transformers", "accelerate", "bitsandbytes", "numpy", "scikit-learn", "pillow", "lm-format-enforcer"]:
             try:
                 versions[name] = importlib.metadata.version(name)
             except importlib.metadata.PackageNotFoundError:
@@ -295,7 +300,8 @@ def main(argv=None) -> int:
                    "gpu_name": torch.cuda.get_device_name(0), "cuda_version": torch.version.cuda}
         generator = Qwen25VLGenerator(
             model_name=pins["generator"]["model_id"], revision=pins["generator"]["revision"],
-            load_in_4bit=not args.no_4bit, max_pixels=args.max_pixels)
+            load_in_4bit=not args.no_4bit, max_pixels=args.max_pixels,
+            constrained_json=args.constrained_json)
         critic = QwenLabelLikelihoodCritic(
             model_id=pins["qwen"]["model_id"], revision=pins["qwen"]["revision"],
             load_in_4bit=not args.no_4bit, prompt_version="evitrust-critic-v1")

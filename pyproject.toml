@@ -21,6 +21,7 @@ vlm = [
   "accelerate>=1.0",
   "pillow>=10.0",
   "sentencepiece>=0.2",
+  "lm-format-enforcer==0.11.3",
   "bitsandbytes>=0.43; platform_system == 'Linux'",
 ]
 retrieval = [
