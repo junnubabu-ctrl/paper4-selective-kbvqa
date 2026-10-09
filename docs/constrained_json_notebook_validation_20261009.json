@@ -1,0 +1,17 @@
+{
+  "notebook": "Paper4_Constrained_JSON_Failure_Replay_20261009.ipynb",
+  "nbformat_valid": true,
+  "code_cells_ast_valid": 18,
+  "empty_execution_outputs": true,
+  "input_zip_bytes_verified": 1544334,
+  "zip_sha256_verified": "6284f522239d728e262ed4703e96677fa97ea95a00577eff2b28bcc454305b7b",
+  "all_53_member_hashes_verified": true,
+  "actual_cli_loader_preflight_passed": true,
+  "all_nine_cpu_contexts_match_archived_effective_contexts": true,
+  "forbidden_inference_field_scan_passed": true,
+  "no_provider_runtime_modifications": true,
+  "gpu_executed_locally": false,
+  "source_commit": "8377ce77b2f1b1f8851ff6e72f36ccbd2902b7bd",
+  "benchmark_result": false,
+  "training": false
+}
